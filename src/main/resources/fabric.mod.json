@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "autism-mace-hitter",
+  "version": "${version}",
+  "name": "Mace Hitter",
+  "description": "KillAura-style mace slammer: instant smashes on shield blockers, no cooldown waiting",
+  "authors": [
+    "you"
+  ],
+  "custom": {
+    "autism:color": "220,90,90",
+    "modmenu": {
+      "parent": {
+        "id": "autism"
+      }
+    }
+  },
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.autismdev.macehitter.MaceHitterInit"
+    ],
+    "autism": [
+      "com.autismdev.macehitter.MaceHitterAddon"
+    ]
+  },
+  "depends": {
+    "java": ">=25",
+    "minecraft": "${mc_compat}",
+    "fabricloader": ">=0.19.3",
+    "fabric-api": ">=${fabric_api_version}",
+    "autism": ">=${autism_api_version}"
+  }
+}
