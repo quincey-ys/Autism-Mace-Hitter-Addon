@@ -6,6 +6,7 @@ import autismclient.api.module.SimpleModule;
 import com.autismdev.macehitter.mixin.MultiPlayerGameModeInvoker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.entity.Entity;
@@ -14,9 +15,11 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.MaceItem;
-import net.minecraft.world.item.SwordItem;
+import net.minecraft.world.item.component.AttackRange;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 /** QYS Addon: situational mace combat plus a separate silent Hitflick module. */
@@ -33,24 +36,14 @@ public final class QysAutismAddon extends SimpleAddon {
     private int stunReturnSlot = -1;
     private int stunTicks;
 
-    // Spear Double Pop: watch a native spear charge, then follow a confirmed hit
-    // with a mace smash only when the mace's own range/fall/cooldown checks pass.
+    // Double Pop is armed only while the main-hand spear is actively charging.
+    // A single confirmed kinetic hit consumes the current charge sequence.
     private Entity spearChargeTarget;
     private int spearChargeSlot = -1;
-    private int spearChargeTicks;
     private int spearLastHurtTime;
     private float spearLastHealth;
     private float spearLastAbsorption;
-
-    // Delayed slot restoration keeps the post-attack swap visible to the server
-    // for a full client tick instead of immediately undoing the swap packet.
-    private int pendingRestoreSlot = -1;
-    private int pendingRestoreTicks;
-
-    private Entity spearFollowupTarget;
-    private int spearFollowupMaceSlot = -1;
-    private int spearFollowupReturnSlot = -1;
-    private int spearFollowupTicks;
+    private boolean spearChargeConsumed;
 
     public QysAutismAddon() {
         super(ApiVersion.CURRENT, "com.autismdev.macehitter");
@@ -75,10 +68,7 @@ public final class QysAutismAddon extends SimpleAddon {
             .addBool("breach-swap", "Sword → Breach Mace Swap", false)
             .addInt("breach-min-armor", "Breach Target Armor", 8, 1, 20, 1)
             .addBool("spear-double-pop", "Spear Charge → Mace Double Pop", false)
-            .addDouble("spear-range", "Spear Charge Tracking Range", 4.5, 3.2, 4.5, 0.1)
             .addDouble("min-fall-distance", "Minimum Smash Fall", 1.5, 0.5, 6.0, 0.1)
-            .addInt("spear-followup-window", "Spear Follow-up Window (ticks)", 40, 10, 100, 1)
-            .addBool("wait-hurt-reset", "Wait for Target Hurt Window", true)
             .addBool("restore-slot", "Restore Original Slot After Combo", true)
             .addBool("require-mace", "Require Mace Available", false)
             .addBool("ignore-walls", "Ignore Walls", false)
@@ -118,7 +108,7 @@ public final class QysAutismAddon extends SimpleAddon {
         Minecraft mc = Minecraft.getInstance();
         releaseJump(mc);
         cancelStun(mc, mc.player);
-        cancelSpearSequence(mc, mc.player, true);
+        clearSpearTracking();
         currentTarget = null;
         delayCounter = 0;
     }
@@ -138,11 +128,6 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
-        if (pendingRestoreTicks > 0 && --pendingRestoreTicks == 0) {
-            restoreSlot(mc, player, pendingRestoreSlot);
-            pendingRestoreSlot = -1;
-        }
-
         if (module.getBool("auto-jump") && player.onGround()) {
             mc.options.keyJump.setDown(true);
         } else if (player.onGround()) {
@@ -154,27 +139,28 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
-        if (spearFollowupTarget != null) {
-            tickSpearFollowup(mc, player, module);
+        boolean activelyChargingSpear = module.getBool("spear-double-pop")
+            && player.isUsingItem()
+            && isSpear(player.getMainHandItem())
+            && isSpear(player.getUseItem());
+
+        if (activelyChargingSpear) {
+            Entity spearTarget = findSpearChargeTarget(mc, player, module);
+            currentTarget = spearTarget;
+            if (!spearChargeConsumed) {
+                updateSpearCharge(mc, player, spearTarget, module);
+            }
+            // While spear is charging, the Double Pop controller owns this tick.
+            // Never run ordinary Mace attacks or ordinary target scans here.
             return;
         }
 
+        // Releasing the spear charge (or switching away from it) disarms the combo.
+        // Spear reach is never used by idle Mace targeting.
+        clearSpearTracking();
+
         Entity target = findTarget(mc, module);
         currentTarget = target;
-
-        // Do not interrupt a real spear charge. Track the target's actual hit
-        // confirmation; switching before the spear connects would cancel it.
-        if (module.getBool("spear-double-pop")
-            && (spearChargeTarget != null || (player.isUsingItem() && isSpear(player.getUseItem())))) {
-            if (updateSpearCharge(mc, player, target, module)) {
-                return;
-            }
-            if (spearChargeTarget != null) {
-                return;
-            }
-        } else {
-            clearSpearTracking();
-        }
 
         if (target == null) {
             releaseJump(mc);
@@ -215,7 +201,7 @@ public final class QysAutismAddon extends SimpleAddon {
         if (module.getBool("breach-swap")
             && target instanceof Player armoredTarget
             && armoredTarget.getArmorValue() >= module.getInt("breach-min-armor")
-            && player.getMainHandItem().getItem() instanceof SwordItem
+            && isSword(player.getMainHandItem())
             && player.getAttackStrengthScale(0.5F) >= 0.9F
             && player.distanceTo(target) <= Math.min(module.getDouble("range"), 3.2)
             && hasLineOfSight(player, target)
@@ -253,122 +239,98 @@ public final class QysAutismAddon extends SimpleAddon {
     }
 
     /**
-     * Tracks a spear while the player is genuinely using it. The spear hit is
-     * detected from the target's hurt-time/health update. Only after that hit
-     * is confirmed do we swap to the mace and wait for a legal follow-up smash.
+     * Finds the entity actually in the held spear's native AttackRange ray.
+     * This uses the item component rather than a hard-coded 4.5-block sphere.
      */
-    private boolean updateSpearCharge(
+    private Entity findSpearChargeTarget(Minecraft mc, LocalPlayer player, SimpleModule module) {
+        ItemStack spear = player.getMainHandItem();
+        AttackRange range = spear.get(DataComponents.ATTACK_RANGE);
+        if (range == null) {
+            range = AttackRange.defaultFor(player);
+        }
+
+        HitResult hit = range.getClosesetHit(player, 1.0F,
+            entity -> isValidTarget(player, entity, module));
+        if (hit instanceof EntityHitResult entityHit) {
+            Entity target = entityHit.getEntity();
+            return range.isInRange(player, target.getBoundingBox(), 0.0D) ? target : null;
+        }
+        return null;
+    }
+
+    private boolean isValidTarget(LocalPlayer player, Entity entity, SimpleModule module) {
+        if (entity == player || entity.isSpectator()) return false;
+        if (!(entity instanceof LivingEntity living) || !living.isAlive()) return false;
+        if (module.getChoice("target-mode").equalsIgnoreCase("Players")
+            && !(entity instanceof Player)) return false;
+        if (entity instanceof Player other && module.getBool("teams-check")
+            && player.isAlliedTo(other)) return false;
+        return module.getBool("ignore-walls") || player.hasLineOfSight(entity);
+    }
+
+    /**
+     * Tracks the target while the spear is actually being charged. When a
+     * health/hurt-time update confirms a kinetic spear hit, it immediately
+     * swaps to the mace, attacks, and restores the spear in the same tick.
+     */
+    private void updateSpearCharge(
         Minecraft mc, LocalPlayer player, Entity selectedTarget, SimpleModule module
     ) {
         if (spearChargeTarget == null) {
-            if (!player.isUsingItem() || !isSpear(player.getUseItem()) || selectedTarget == null) {
-                return false;
-            }
-            if (player.distanceTo(selectedTarget) > module.getDouble("spear-range")
-                || !hasLineOfSight(player, selectedTarget)) {
-                return false;
-            }
-
+            if (selectedTarget == null) return;
             spearChargeTarget = selectedTarget;
             spearChargeSlot = player.getInventory().getSelectedSlot();
-            spearChargeTicks = 0;
             spearLastHurtTime = selectedTarget instanceof LivingEntity living ? living.hurtTime : 0;
             spearLastHealth = selectedTarget instanceof LivingEntity living ? living.getHealth() : 0.0F;
-            spearLastAbsorption = selectedTarget instanceof LivingEntity living ? living.getAbsorptionAmount() : 0.0F;
-            return true;
+            spearLastAbsorption = selectedTarget instanceof LivingEntity living
+                ? living.getAbsorptionAmount() : 0.0F;
+            return;
         }
 
-        spearChargeTicks++;
         if (!spearChargeTarget.isAlive()
-            || spearChargeTicks > 120
             || player.getInventory().getSelectedSlot() != spearChargeSlot
-            || player.distanceTo(spearChargeTarget) > module.getDouble("spear-range") + 1.0) {
-            clearSpearTracking();
-            return false;
+            || !isSpear(player.getMainHandItem())) {
+            return;
         }
-
-        if (!(spearChargeTarget instanceof LivingEntity living)) {
-            clearSpearTracking();
-            return false;
-        }
+        if (!(spearChargeTarget instanceof LivingEntity living)) return;
 
         float health = living.getHealth();
         float absorption = living.getAbsorptionAmount();
-        boolean tookDamage = living.hurtTime > spearLastHurtTime
+        boolean hitConfirmed = living.hurtTime > spearLastHurtTime
             || health + absorption < spearLastHealth + spearLastAbsorption - 0.01F;
 
         spearLastHurtTime = living.hurtTime;
         spearLastHealth = health;
         spearLastAbsorption = absorption;
+        if (!hitConfirmed) return;
 
-        if (!tookDamage) {
-            return true;
-        }
-
+        // Consume this charge even when no mace is available; never repeat the
+        // same spear contact as a second combo attempt.
+        spearChargeConsumed = true;
         int maceSlot = findMaceSlot(player);
-        if (maceSlot < 0) {
-            clearSpearTracking();
-            return false;
+        if (maceSlot < 0 || maceSlot == spearChargeSlot) return;
+
+        ItemStack spear = player.getMainHandItem();
+        AttackRange spearRange = spear.get(DataComponents.ATTACK_RANGE);
+        if (spearRange == null) {
+            spearRange = AttackRange.defaultFor(player);
         }
 
-        spearFollowupTarget = spearChargeTarget;
-        spearFollowupMaceSlot = maceSlot;
-        spearFollowupReturnSlot = spearChargeSlot;
-        spearFollowupTicks = 0;
-        clearSpearTracking();
-
-        // Sync immediately so the spear charge ends on the server after its
-        // confirmed collision. The mace follow-up itself still waits for range,
-        // hurt-window, falling-smash, and cooldown conditions.
-        selectSlot(player, maceSlot);
-        syncSelectedSlot(mc);
-        return true;
-    }
-
-    private void tickSpearFollowup(Minecraft mc, LocalPlayer player, SimpleModule module) {
-        spearFollowupTicks++;
-        if (spearFollowupTarget == null || !spearFollowupTarget.isAlive()
-            || spearFollowupTicks > module.getInt("spear-followup-window")
-            || spearFollowupMaceSlot < 0 || spearFollowupMaceSlot > 8
-            || !(player.getInventory().getItem(spearFollowupMaceSlot).getItem() instanceof MaceItem)) {
-            cancelSpearSequence(mc, player, true);
-            return;
-        }
-
-        // Respect a manual slot change instead of fighting the player's input.
-        if (player.getInventory().getSelectedSlot() != spearFollowupMaceSlot) {
-            cancelSpearSequence(mc, player, false);
+        // Only use spear reach if the target is inside this spear's actual item
+        // reach. The following mace attack uses the same-tick attribute swap.
+        if (!spearRange.isInRange(player, spearChargeTarget.getBoundingBox(), 0.0D)
+            || (!module.getBool("ignore-walls") && !player.hasLineOfSight(spearChargeTarget))) {
             return;
         }
 
         if (module.getBool("rotate")) {
-            rotateTo(player, spearFollowupTarget);
+            rotateTo(player, spearChargeTarget);
         }
 
-        double legalMaceRange = Math.min(module.getDouble("range"), 3.2);
-        if (player.distanceTo(spearFollowupTarget) > legalMaceRange
-            || !hasLineOfSight(player, spearFollowupTarget)) {
-            return;
-        }
-
-        // Wait out the spear charge's hurt window so the mace can be a distinct
-        // second hit rather than being swallowed by the target's damage immunity.
-        if (module.getBool("wait-hurt-reset")
-            && spearFollowupTarget instanceof LivingEntity living
-            && living.hurtTime > 0) {
-            return;
-        }
-
-        if (!isSmashReady(player, module) || player.getAttackStrengthScale(0.5F) < 0.9F) {
-            return;
-        }
-
-        mc.gameMode.attack(player, spearFollowupTarget);
-        if (module.getBool("restore-slot")) {
-            restoreSlot(mc, player, spearFollowupReturnSlot);
-        }
-
-        clearSpearFollowup();
+        performAttributeSwap(
+            mc, player, spearChargeTarget, maceSlot, spearChargeSlot,
+            module.getBool("restore-slot")
+        );
         delayCounter = module.getInt("delay");
     }
 
@@ -411,28 +373,12 @@ public final class QysAutismAddon extends SimpleAddon {
 
     private Entity findTarget(Minecraft mc, SimpleModule module) {
         LocalPlayer player = mc.player;
-        double range = module.getDouble("range");
-        if (module.getBool("spear-double-pop") && isSpear(player.getMainHandItem())) {
-            range = Math.max(range, module.getDouble("spear-range"));
-        }
-
-        boolean playersOnly = module.getChoice("target-mode").equalsIgnoreCase("Players");
         boolean ignoreWalls = module.getBool("ignore-walls");
-        boolean teamsCheck = module.getBool("teams-check");
 
         Entity best = null;
         double bestDistance = Double.MAX_VALUE;
         for (Entity entity : mc.level.entitiesForRendering()) {
-            if (entity == player || entity.isSpectator()) {
-                continue;
-            }
-            if (!(entity instanceof LivingEntity living) || !living.isAlive()) {
-                continue;
-            }
-            if (playersOnly && !(entity instanceof Player)) {
-                continue;
-            }
-            if (entity instanceof Player other && teamsCheck && player.isAlliedTo(other)) {
+            if (!isValidTarget(player, entity, module)) {
                 continue;
             }
 
@@ -453,14 +399,12 @@ public final class QysAutismAddon extends SimpleAddon {
         Minecraft mc, LocalPlayer player, Entity target,
         int swapSlot, int originalSlot, boolean restore
     ) {
-        // Attribute/Breach swapping is a post-hit sequence: attack with the
-        // source weapon first, then switch to the mace immediately afterward.
-        mc.gameMode.attack(player, target);
+        // Same-tick item attribute swap: equip the mace, let vanilla attack send
+        // the selected-slot update before the attack packet, then restore source.
         selectSlot(player, swapSlot);
-        syncSelectedSlot(mc);
+        mc.gameMode.attack(player, target);
         if (restore) {
-            pendingRestoreSlot = originalSlot;
-            pendingRestoreTicks = 1;
+            restoreSlot(mc, player, originalSlot);
         }
     }
 
@@ -515,6 +459,10 @@ public final class QysAutismAddon extends SimpleAddon {
 
     private boolean isSpear(ItemStack stack) {
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath().endsWith("_spear");
+    }
+
+    private boolean isSword(ItemStack stack) {
+        return BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath().endsWith("_sword");
     }
 
     private boolean isBlocking(Entity target) {
@@ -583,29 +531,13 @@ public final class QysAutismAddon extends SimpleAddon {
         stunTicks = 0;
     }
 
-    private void cancelSpearSequence(Minecraft mc, LocalPlayer player, boolean restore) {
-        if (restore && player != null && spearFollowupMaceSlot >= 0
-            && player.getInventory().getSelectedSlot() == spearFollowupMaceSlot) {
-            restoreSlot(mc, player, spearFollowupReturnSlot);
-        }
-        clearSpearTracking();
-        clearSpearFollowup();
-    }
-
     private void clearSpearTracking() {
         spearChargeTarget = null;
         spearChargeSlot = -1;
-        spearChargeTicks = 0;
         spearLastHurtTime = 0;
         spearLastHealth = 0.0F;
         spearLastAbsorption = 0.0F;
-    }
-
-    private void clearSpearFollowup() {
-        spearFollowupTarget = null;
-        spearFollowupMaceSlot = -1;
-        spearFollowupReturnSlot = -1;
-        spearFollowupTicks = 0;
+        spearChargeConsumed = false;
     }
 
     private void releaseJump(Minecraft mc) {
