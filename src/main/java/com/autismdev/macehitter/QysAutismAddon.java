@@ -120,7 +120,7 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
-        int originalSlot = player.getInventory().selected;
+        int originalSlot = player.getInventory().getSelectedSlot();
         int maceSlot = findMaceSlot(player);
         int axeSlot = findAxeSlot(player);
         double distance = player.distanceTo(target);
@@ -286,14 +286,14 @@ public final class QysAutismAddon extends SimpleAddon {
     }
 
     private void selectSlot(LocalPlayer player, int slot) {
-        if (slot < 0 || slot > 8 || player.getInventory().selected == slot) return;
-        player.getInventory().selected = slot;
+        if (slot < 0 || slot > 8 || player.getInventory().getSelectedSlot() == slot) return;
+        player.getInventory().setSelectedSlot(slot);
         player.getInventory().setChanged();
     }
 
     private int findMaceSlot(LocalPlayer player) {
         if (player.getMainHandItem().getItem() instanceof MaceItem) {
-            return player.getInventory().selected;
+            return player.getInventory().getSelectedSlot();
         }
         for (int i = 0; i < 9; i++) {
             if (player.getInventory().getItem(i).getItem() instanceof MaceItem) return i;
@@ -303,7 +303,7 @@ public final class QysAutismAddon extends SimpleAddon {
 
     private int findAxeSlot(LocalPlayer player) {
         if (player.getMainHandItem().getItem() instanceof AxeItem) {
-            return player.getInventory().selected;
+            return player.getInventory().getSelectedSlot();
         }
         for (int i = 0; i < 9; i++) {
             if (player.getInventory().getItem(i).getItem() instanceof AxeItem) return i;
