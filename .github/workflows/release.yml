@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    if: github.event.head_commit.message == 'Publish QYS Addon v1.0.2'
+    if: github.event.head_commit.message == 'Publish QYS Addon v1.0.5'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -44,17 +44,17 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.2
-          name: QYS AUTISM Addon v1.0.2
+          tag_name: v1.0.5
+          name: QYS AUTISM Addon v1.0.5
           body: |
-            Attack-ready auto-equip update for AUTISM Client 5.0-26.2 (API v3).
+            YouTube / YouTube Music browser handoff and Windows media controls for AUTISM Client 5.0-26.2 (API v3).
 
-            Auto Equip Mace now switches only when the configured attack window and vanilla attack cooldown are ready. Stun Slam holds the axe during setup and equips the mace only for the actual falling smash.
+            Music Player now recognizes YouTube and YouTube Music video / playlist URLs and opens them in the default browser instead of trying to decode the webpage as an audio file. Play/Pause, Next, Previous, Stop, and system-volume controls are sent through Windows global media keys. Browser playback remains in the browser; a manual click on Play may be required by browser autoplay policy. Protected YouTube audio is not extracted into Minecraft.
 
-            The previous metadata incorrectly required the development-suffixed client version. This release declares the stable 5.0-26.2 host version. It is not a Client 5.1 / API v4 build.
+            Keeps local MP3 / OGG / WAV / AIFF playback, M3U playlists, the Mace, Combat, and Hitflick modules. CI compilation passed; test in-game behavior on a separate instance before regular use.
 
-            Includes the Mace, Combat, and Hitflick modules. CI compilation passed; in-game behavior should still be tested on a separate instance before regular use.
+            Built for Minecraft 26.2, Fabric, Java 25, and AUTISM Client 5.0 API v3. Not for Client 5.1 / API v4.
           draft: false
           prerelease: true
-          files: build/libs/qys-autism-addon-1.0.2.jar
+          files: build/libs/qys-autism-addon-1.0.5.jar
           fail_on_unmatched_files: true
