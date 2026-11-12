@@ -9,8 +9,8 @@ The Fabric mod ID remains `autism-mace-hitter` intentionally so AUTISM Client ca
 The former Mace Hitter module is now named **Mace**.
 
 - **Stun Slam (Axe -> Mace):** attacks a raised shield with an axe, then waits for a valid falling mace smash.
-- **Sword -> Breach Mace Swap:** when a sword is held and an armored player is in ordinary melee range, uses a Breach-enchanted mace for the situational same-tick attribute swap. This depends on server-side attribute-swap behavior.
-- **Mace Attribute Swap:** optionally performs a same-tick mace attack during a falling smash.
+- **Sword -> Breach Mace Swap:** when a sword is held and an armored player is in ordinary melee range, attacks with the sword and switches to a Breach-enchanted mace immediately afterward for the situational post-attack attribute swap. This depends on server-side attribute-swap behavior.
+- **Mace Attribute Swap:** optionally switches to the mace immediately after a falling attack to attempt the post-attack attribute swap.
 - **Spear Charge -> Mace Double Pop:** tracks a genuine spear use/charge, detects a confirmed spear hit, switches to the mace, then waits for the target's hurt window to clear and for a legal-range falling smash before attempting the second hit.
 - **Slot restoration:** optionally restores and synchronizes the original hotbar slot after a combo.
 
@@ -27,7 +27,7 @@ The spear double-pop does not force mace reach to equal spear reach. The follow-
 | Auto Jump | On | Helps create falling smash windows |
 | Only Attack While Falling | Off | Restricts ordinary attacks to falling |
 | Stun Slam (Axe -> Mace) | On | Axe shield-disable followed by a falling mace hit |
-| Mace Attribute Swap | Off | Same-tick mace attribute swap during a smash |
+| Mace Attribute Swap | Off | Post-attack mace attribute swap during a smash |
 | Sword -> Breach Mace Swap | Off | Situational Breach swap against armored players |
 | Breach Target Armor | 8 | Minimum target armor value |
 | Spear Charge -> Mace Double Pop | Off | Detects a spear hit, then attempts a mace smash follow-up |
