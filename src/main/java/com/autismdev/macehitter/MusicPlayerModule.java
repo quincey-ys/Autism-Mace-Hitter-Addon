@@ -135,7 +135,7 @@ public final class MusicPlayerModule extends SimpleModule {
         volume = module.getInt("volume");
         applyVolume();
 
-        boolean acceptKeys = mc.screen == null;
+        boolean acceptKeys = mc.gui == null || mc.gui.screen() == null;
         boolean playDown = acceptKeys && pressed(mc, module, "play-key");
         boolean pauseDown = acceptKeys && pressed(mc, module, "pause-key");
         boolean nextDown = acceptKeys && pressed(mc, module, "next-key");
@@ -660,7 +660,8 @@ public final class MusicPlayerModule extends SimpleModule {
 
     private void notifyPlayer(Minecraft mc, String message) {
         if (mc.gui != null) {
-            mc.gui.getChat().addMessage(Component.literal("[Music Player] " + message));
+            if (mc.gui == null || mc.gui.hud.getChat() == null) return;
+            mc.gui.hud.getChat().addClientSystemMessage(Component.literal("[Music Player] " + message));
         }
     }
 
