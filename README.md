@@ -48,7 +48,7 @@ The **Entities** picker is a whitelist: only selected entity types can be target
 
 ## Module: Music Player
 
-**Music Player** is a standalone in-game audio player. It decodes audio on a background thread and plays it through the local client audio output; it does not launch a browser.
+**Music Player** is a standalone module with two playback paths: local audio is decoded and played by the client, while YouTube / YouTube Music URLs are opened in the default browser and controlled through Windows global media keys. The browser path does not extract or copy YouTube audio into Minecraft.
 
 ### Playlist sources
 
@@ -58,19 +58,22 @@ Set **Playlist Source** to one of the following:
 - A direct audio URL that serves MP3, OGG, WAV, or AIFF audio.
 - A local or remote `.m3u` playlist file. Each track can be a local path or a direct audio URL; relative entries are resolved against the playlist file.
 - Multiple direct file/stream entries separated by semicolons.
+- A YouTube Music or YouTube playlist URL, such as `https://music.youtube.com/playlist?list=...`, or a YouTube video URL. Press **Play Playlist** to open it in the default browser.
 
-The addon bundles Java Sound MP3 and OGG decoders; WAV and AIFF use the Java runtime's built-in audio support. A YouTube Music or YouTube playlist page is not a direct audio stream, so those web-page links are not playable sources. Use files or direct audio streams that you have permission to play.
+For YouTube sources, **P** sends Play/Pause, **]** sends Next Track, **[** sends Previous Track, **Backspace** sends Stop, and **Page Up / Page Down** changes Windows system volume. These global media keys control whichever Windows media session is active, so another media app may receive them if it owns the active session. YouTube playback remains in the browser; the browser may require one manual click on Play before autoplay and media controls work. Shuffle and loop are controlled in the YouTube Music page itself.
+
+The addon bundles Java Sound MP3 and OGG decoders; WAV and AIFF use the Java runtime's built-in audio support. HLS `.m3u8` manifests and protected streaming-service pages are not supported as direct audio streams. Use files or direct audio streams that you have permission to play.
 
 ### Controls and settings
 
 | Setting | Default | Purpose |
 |---|---:|---|
-| Playlist Source | Empty | Local file, direct audio URL, or `.m3u` playlist |
-| Auto Start In PvP | On | Starts the playlist when an enemy player first enters the detection range |
+| Playlist Source | Empty | Local file, direct audio URL, `.m3u` playlist, or YouTube / YouTube Music URL (browser handoff) |
+| Auto Start In PvP | On | Starts local playback or opens the configured YouTube page when an enemy player first enters detection range |
 | PvP Detection Range | 12 blocks | Nearby-player detection radius |
 | Require Line Of Sight | On | Only triggers for a visible enemy player |
 | Ignore Teammates | On | Does not trigger for allied players |
-| Pause When PvP Ends | Off | Pauses music when the detected PvP session ends, only if PvP started it |
+| Pause When PvP Ends | Off | Pauses local playback when PvP ends; external YouTube playback cannot be queried reliably |
 | Shuffle | Off | Randomizes the next track |
 | Loop Mode | Playlist | Off, Track, or Playlist |
 | Player Volume | 80% | Music player output level |
@@ -82,7 +85,7 @@ The addon bundles Java Sound MP3 and OGG decoders; WAV and AIFF use the Java run
 | Volume Up / Down | Page Up / Page Down | Changes player volume in 5% steps |
 | Toggle Shuffle Key | R | Toggles shuffle |
 
-All player keybinds are configurable. Music continues while the player is in-game and stops when the module is disabled. Audio decoding and network reads run off the game thread. Direct audio-stream servers may require a reachable URL and can reject requests or change formats; HLS `.m3u8` manifests and protected streaming-service pages are not supported.
+All player keybinds are configurable. Local music continues while the player is in-game and stops when the module is disabled. YouTube Music runs in the external browser session and uses Windows global media keys; disabling the module sends a media Stop command to that session. Audio decoding and network reads for local files/direct streams run off the game thread. Direct audio-stream servers may require a reachable URL and can reject requests or change formats.
 
 ## Module: Combat
 
