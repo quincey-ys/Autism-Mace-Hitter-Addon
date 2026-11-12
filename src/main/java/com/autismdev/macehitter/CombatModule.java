@@ -229,13 +229,30 @@ public final class CombatModule extends SimpleModule {
             case "Sword" -> firstOrFallback(findSwordSlot(player), previousSlot);
             case "Mace" -> firstOrFallback(findMaceSlot(player), previousSlot);
             case "Spear" -> firstOrFallback(findSpearSlot(player), previousSlot);
-            case "Best Weapon" -> firstOrFallback(chooseWeaponSlot(mc, player, target, module), previousSlot);
+            case "Best Weapon" -> firstOrFallback(choosePostShieldWeaponSlot(mc, player, target, module), previousSlot);
             default -> previousSlot;
         };
     }
 
     private int firstOrFallback(int preferred, int fallback) {
         return preferred >= 0 ? preferred : fallback;
+    }
+
+    private int choosePostShieldWeaponSlot(
+        Minecraft mc, LocalPlayer player, Entity target, SimpleModule module
+    ) {
+        if (target instanceof Player armored
+            && armored.getArmorValue() >= module.getInt("armor-threshold")) {
+            int breach = findBreachMaceSlot(mc, player);
+            if (breach >= 0) return breach;
+        }
+        int sword = findSwordSlot(player);
+        if (sword >= 0) return sword;
+        int mace = findMaceSlot(player);
+        if (mace >= 0) return mace;
+        int spear = findSpearSlot(player);
+        if (spear >= 0) return spear;
+        return findAxeSlot(player);
     }
 
     private boolean trySmartSmash(
