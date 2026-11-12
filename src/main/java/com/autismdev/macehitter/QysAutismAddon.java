@@ -220,11 +220,19 @@ public final class QysAutismAddon extends SimpleAddon {
 
     private void onMaceDisabled(SimpleModule module) {
         Minecraft mc = Minecraft.getInstance();
+        LocalPlayer player = mc.player;
+        if (module != null) AutismKillAuraRotation.beginWindDown(module.id());
+        if (player != null && pendingRestoreSlot >= 0
+            && player.getInventory().getSelectedSlot() == pendingRestoreFromSlot) {
+            restoreSlot(mc, player, pendingRestoreSlot);
+        }
+        clearPendingRestore();
         releaseJump(mc);
-        cancelStun(mc, mc.player);
         clearSpearTracking();
         currentTarget = null;
         delayCounter = 0;
+        lastQueuedMaceAttackTick = Integer.MIN_VALUE;
+        cancelStun(mc, player);
     }
 
     private void onMaceTick(SimpleModule module) {
@@ -238,8 +246,12 @@ public final class QysAutismAddon extends SimpleAddon {
             stunReturnSlot = -1;
             stunTicks = 0;
             currentTarget = null;
+            clearPendingRestore();
+            AutismKillAuraRotation.beginWindDown(module.id());
             return;
         }
+
+        processPendingRestore(mc, player);
 
         boolean activelyChargingSpear = module.getBool("spear-double-pop")
             && player.isUsingItem()
@@ -261,6 +273,8 @@ public final class QysAutismAddon extends SimpleAddon {
         if (activelyChargingSpear) {
             Entity spearTarget = findSpearChargeTarget(mc, player, module);
             currentTarget = spearTarget;
+            if (spearTarget != null) updateMaceRotation(player, spearTarget, module);
+            else stopMaceRotation(player, module);
             if (!spearChargeConsumed) {
                 updateSpearCharge(mc, player, spearTarget, module);
             }
@@ -278,12 +292,11 @@ public final class QysAutismAddon extends SimpleAddon {
 
         if (target == null) {
             releaseJump(mc);
+            stopMaceRotation(player, module);
             return;
         }
 
-        if (module.getBool("rotate")) {
-            rotateTo(player, target);
-        }
+        updateMaceRotation(player, target, module);
 
         if (delayCounter > 0) {
             delayCounter--;
@@ -294,25 +307,27 @@ public final class QysAutismAddon extends SimpleAddon {
         int maceSlot = findMaceSlot(player);
         int axeSlot = findAxeSlot(player);
 
-        // Shield users get the axe first. The follow-up mace hit waits for a
-        // true falling smash window instead of issuing two same-tick attacks.
+        // Shield users get the axe first. The queued hit is delivered through
+        // the same input pipeline used by AUTISM KillAura.
         if (isBlocking(target) && module.getBool("shield-stun") && axeSlot >= 0 && maceSlot >= 0) {
-            if (player.getAttackStrengthScale(0.5F) < 0.9F
-                || !claimAttackTick(player.tickCount)) {
+            if (axeSlot != originalSlot) {
+                if (player.getAttackStrengthScale(0.5F) >= 0.9F) {
+                    selectSlot(mc, player, axeSlot, module);
+                }
                 return;
             }
-            selectSlot(player, axeSlot);
-            mc.gameMode.attack(player, target);
-            stunTarget = target;
-            stunMaceSlot = maceSlot;
-            stunReturnSlot = originalSlot;
-            stunTicks = 0;
-            syncSelectedSlot(mc);
+            if (queueMaceAttack(mc, player, target, module, false)) {
+                stunTarget = target;
+                stunMaceSlot = maceSlot;
+                stunReturnSlot = originalSlot;
+                stunTicks = 0;
+                delayCounter = module.getInt("delay");
+            }
             return;
         }
 
         // Breach swap is a sword-sourced attack paired with a Breach mace.
-        // Only attempt it against armored players and within ordinary melee range.
+        // The source weapon's ready attack window authorizes the same-tick swap.
         if (module.getBool("breach-swap")
             && target instanceof Player armoredTarget
             && armoredTarget.getArmorValue() >= module.getInt("breach-min-armor")
@@ -323,9 +338,10 @@ public final class QysAutismAddon extends SimpleAddon {
         ) {
             int breachSlot = findBreachMaceSlot(mc, player);
             if (breachSlot >= 0 && breachSlot != originalSlot) {
-                performAttributeSwap(mc, player, target, breachSlot, originalSlot,
-                    module.getBool("restore-slot"));
-                delayCounter = module.getInt("delay");
+                if (performAttributeSwap(mc, player, target, breachSlot, originalSlot,
+                    module.getBool("restore-slot"), module)) {
+                    delayCounter = module.getInt("delay");
+                }
                 return;
             }
         }
@@ -336,47 +352,39 @@ public final class QysAutismAddon extends SimpleAddon {
             && player.getAttackStrengthScale(0.5F) >= 0.9F
             && maceSlot >= 0
             && maceSlot != originalSlot) {
-            performAttributeSwap(mc, player, target, maceSlot, originalSlot,
-                module.getBool("restore-slot"));
-            delayCounter = module.getInt("delay");
+            if (performAttributeSwap(mc, player, target, maceSlot, originalSlot,
+                module.getBool("restore-slot"), module)) {
+                delayCounter = module.getInt("delay");
+            }
             return;
         }
 
-        // A mace already in hand must not be blocked by the client-side
-        // cooldown gate: keep submitting attacks at the configured tick delay
-        // and let vanilla/server cooldown scaling determine their damage.
-        // When auto-equipping from another item, still wait for that source
-        // item's attack window so the hotbar does not switch early.
-        boolean maceAlreadyHeld = player.getMainHandItem().getItem() instanceof MaceItem;
-        boolean attackCooldownReady = maceAlreadyHeld
-            || player.getAttackStrengthScale(0.5F) >= 0.9F;
-        boolean attackWindowReady = (!module.getBool("falling-only") || isFalling(player))
-            && attackCooldownReady;
-        if (!attackWindowReady) return;
-
-        int availableMaceSlot = findMaceSlot(player);
         boolean requireMace = module.getBool("require-mace");
         boolean autoEquipMace = module.getBool("auto-swap");
-        if (requireMace && (availableMaceSlot < 0
-            || (!autoEquipMace && !(player.getMainHandItem().getItem() instanceof MaceItem)))) {
+        if (requireMace && maceSlot < 0) {
+            releaseJump(mc);
+            return;
+        }
+        if (requireMace && !autoEquipMace
+            && !(player.getMainHandItem().getItem() instanceof MaceItem)) {
             releaseJump(mc);
             return;
         }
 
-        if (!claimAttackTick(player.tickCount)) return;
-
-        // Slot switching happens on the same tick as the ready attack, never
-        // while waiting on fall distance, target timing, or attack cooldown.
-        boolean maceReady = ensureMace(player, module);
-        if (requireMace && !maceReady) {
-            releaseJump(mc);
+        // Match KillAura's weapon preparation: select the mace only after a
+        // real target ray exists, then let its own cooldown fill before queuing.
+        if (autoEquipMace && maceSlot >= 0 && maceSlot != originalSlot) {
+            if (module.getBool("falling-only") && !isFalling(player)) return;
+            if (player.getAttackStrengthScale(0.5F) < 0.9F) return;
+            if (findAttackHit(mc, player, target, module) == null) return;
+            selectSlot(mc, player, maceSlot, module);
             return;
         }
 
-        // Ensure a newly equipped mace is selected server-side before the attack.
-        if (maceReady) syncSelectedSlot(mc);
-        mc.gameMode.attack(player, target);
-        delayCounter = module.getInt("delay");
+        if (module.getBool("falling-only") && !isFalling(player)) return;
+        if (queueMaceAttack(mc, player, target, module, false)) {
+            delayCounter = module.getInt("delay");
+        }
     }
 
     /**
