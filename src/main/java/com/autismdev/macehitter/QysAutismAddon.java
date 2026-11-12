@@ -270,7 +270,9 @@ public final class QysAutismAddon extends SimpleAddon {
     private void restoreSlot(Minecraft mc, LocalPlayer player, int slot) {
         if (slot < 0 || slot > 8) return;
         selectSlot(player, slot);
-        ((MultiPlayerGameModeInvoker) mc.gameMode).qys$ensureHasSentCarriedItem();
+        if (mc.gameMode != null) {
+            ((MultiPlayerGameModeInvoker) mc.gameMode).qys$ensureHasSentCarriedItem();
+        }
     }
 
     private void cancelStun(Minecraft mc, LocalPlayer player) {
