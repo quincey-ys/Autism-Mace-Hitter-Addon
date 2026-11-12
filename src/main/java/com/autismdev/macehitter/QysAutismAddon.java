@@ -281,6 +281,7 @@ public final class QysAutismAddon extends SimpleAddon {
         // Generic mace attribute swap is only attempted on an actual falling smash.
         if (module.getBool("mace-attribute-swap")
             && isSmashReady(player, module)
+            && player.getAttackStrengthScale(0.5F) >= 0.9F
             && maceSlot >= 0
             && maceSlot != originalSlot) {
             performAttributeSwap(mc, player, target, maceSlot, originalSlot,
@@ -289,17 +290,35 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
-        boolean maceReady = ensureMace(player, module);
-        if (module.getBool("require-mace") && !maceReady) {
+        // Do not equip a mace just because a target exists. Wait until this
+        // tick can actually issue the configured attack (including the falling
+        // restriction and vanilla attack cooldown), then claim the tick before
+        // changing the selected slot.
+        boolean attackWindowReady = (!module.getBool("falling-only") || isFalling(player))
+            && player.getAttackStrengthScale(0.5F) >= 0.9F;
+        if (!attackWindowReady) return;
+
+        int availableMaceSlot = findMaceSlot(player);
+        boolean requireMace = module.getBool("require-mace");
+        boolean autoEquipMace = module.getBool("auto-swap");
+        if (requireMace && (availableMaceSlot < 0
+            || (!autoEquipMace && !(player.getMainHandItem().getItem() instanceof MaceItem)))) {
             releaseJump(mc);
             return;
         }
 
-        if ((!module.getBool("falling-only") || isFalling(player))
-            && claimAttackTick(player.tickCount)) {
-            mc.gameMode.attack(player, target);
-            delayCounter = module.getInt("delay");
+        if (!claimAttackTick(player.tickCount)) return;
+
+        // Slot switching happens on the same tick as the ready attack, never
+        // while waiting on fall distance, target timing, or attack cooldown.
+        boolean maceReady = ensureMace(player, module);
+        if (requireMace && !maceReady) {
+            releaseJump(mc);
+            return;
         }
+
+        mc.gameMode.attack(player, target);
+        delayCounter = module.getInt("delay");
     }
 
     /**
@@ -464,14 +483,15 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
-        selectSlot(player, stunMaceSlot);
         boolean smashReady = isSmashReady(player, module);
         boolean cooldownReady = player.getAttackStrengthScale(0.5F) >= 0.9F;
-        if (!smashReady || !cooldownReady) {
+        if (!smashReady || !cooldownReady || !claimAttackTick(player.tickCount)) {
             return;
         }
 
-        if (!claimAttackTick(player.tickCount)) return;
+        // Keep the axe selected throughout the setup. Equip the mace only on
+        // the tick the falling smash can actually be sent.
+        selectSlot(player, stunMaceSlot);
         mc.gameMode.attack(player, stunTarget);
         if (module.getBool("restore-slot")) {
             restoreSlot(mc, player, stunReturnSlot);
