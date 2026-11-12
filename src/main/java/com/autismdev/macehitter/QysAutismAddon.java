@@ -98,6 +98,7 @@ public final class QysAutismAddon extends SimpleAddon {
 
         registerModule(mace);
         registerModule(new CombatModule());
+        registerModule(new MusicPlayerModule());
 
         SimpleModule hitflick = new SimpleModule(
             "hitflick",
