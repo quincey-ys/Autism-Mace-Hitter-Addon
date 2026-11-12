@@ -185,8 +185,9 @@ public final class QysAutismAddon extends SimpleAddon {
 
         @Override
         public boolean hasDisabledTickWork() {
-            return id().equals(AutismKillAuraRotation.currentOwner())
-                && AutismKillAuraRotation.hasCurrentRotation();
+            return pendingRestoreSlot >= 0
+                || id().equals(AutismKillAuraRotation.currentOwner())
+                    && AutismKillAuraRotation.hasCurrentRotation();
         }
 
         @Override
@@ -705,11 +706,8 @@ public final class QysAutismAddon extends SimpleAddon {
     }
 
     private AutismRotationUtil.Rotation currentMaceRotation(LocalPlayer player, SimpleModule module) {
-        if (module.id().equals(AutismKillAuraRotation.currentOwner())) {
-            AutismRotationUtil.Rotation current = AutismKillAuraRotation.getCurrentRotation();
-            if (current != null) return current;
-        }
-        return AutismRotationUtil.playerRotation(player);
+        AutismRotationUtil.Rotation current = AutismKillAuraRotation.getCurrentRotation();
+        return current != null ? current : AutismRotationUtil.playerRotation(player);
     }
 
     private EntityHitResult findAttackHit(
