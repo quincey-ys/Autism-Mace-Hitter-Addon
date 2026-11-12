@@ -1,56 +1,161 @@
-# Mace Hitter (AUTISM Client addon)
+# QYS AUTISM Addon
 
-A KillAura-style module built around mace smash attacks.
+A client-side addon for **AUTISM Client 5.0-26.2 (API v3)** on Minecraft 26.2 / Fabric. The release is version-locked to the Client 5.0 API line; it is not a Client 5.1 / API v4 build.
 
-## Module: "Mace Hitter"
+The Fabric mod ID remains `autism-mace-hitter` intentionally so AUTISM Client can keep the addon identity and saved settings. The displayed addon name is **QYS Addon**.
 
-Locks the closest target in reach, faces it, swaps to your mace and slams:
+## Module: Mace
 
-- **No cooldown waiting** - every tick the target is in reach and the
-  conditions pass, it swings.
-- **Smash setup** - holds jump automatically and attacks while falling so
-  every hit is a mace smash (bonus damage, no fall damage on you).
-- **Shield stun slam** - if the target raises a shield it is hit instantly,
-  even mid-jump: mace smashes disable shields, so blockers get broken first.
-- KillAura mechanics: nearest-target selection, rotations, LOS check.
+The former Mace Hitter module is now named **Mace**.
 
-### Settings
+- **Stun Slam (Axe -> Mace):** attacks a raised shield with an axe, then waits for a valid falling mace smash.
+- **Sword -> Breach Mace Swap:** when a sword is held and an armored player is in ordinary melee range, temporarily selects a Breach-enchanted mace and queues the hit through AUTISM's combat input pipeline. The original slot can be restored after the queued hit.
+- **Mace Attribute Swap:** optionally selects the mace for a falling smash, queues the attack through KillAura's hit pipeline, and optionally restores the source slot on the following tick.
+- **Spear Charge -> Mace Double Pop:** this path is armed only while the main-hand spear is actively charging. It uses the spear's native `ATTACK_RANGE` component to find a target that can actually be reached by the spear. After client-observed hit confirmation, it selects the mace and queues one follow-up hit through AUTISM's combat input pipeline; optional slot restoration occurs on the next tick.
+- **Slot restoration:** optionally restores and synchronizes the original hotbar slot after a combo.
 
-| Setting | Default | What it does |
-|---|---|---|
-| Range | 3.2 | Max distance to acquire/attack |
-| Delay (ticks) | 0 | Ticks between swings (0 = every tick) |
-| Rotate | on | Snap your view to the target each tick |
-| Auto Swap Mace | on | Finds a mace in the hotbar and equips it |
-| Auto Jump | on | Bounces you so smashes keep landing |
-| Smash Only While Falling | off | Only attack mid-fall (max mace damage) |
-| Stun Shield Blockers | on | Always hit shield blockers instantly |
-| Require Mace In Hand | off | Do nothing if no mace is available |
-| Ignore Walls | off | Skip the line-of-sight check |
-| Target Mode | Players | Players only, or every living entity |
-| Ignore Teammates | on | Skips players allied to you |
+The spear double-pop's extended range is gated by the held spear's actual item-defined attack range; it is not active while the player is idle, holding a different item, or merely carrying a spear. The follow-up is queued as a real client attack against the current hit ray. Servers can still reject or normalize item swaps, and the spear hit must be observable by the client before the follow-up can be triggered.
 
-### Macro action: "Slam Now"
+### Mace settings
 
-Appears in the macro editor. Forces one slam attempt on the current target
-immediately, regardless of module state.
+| Setting | Default | Purpose |
+|---|---:|---|
+| Normal Range | 3.2 | Ordinary target range |
+| Attack Delay | 0 ticks | Delay between ordinary attacks |
+| Rotate to Target | On | Faces the current target |
+| Auto Equip Mace | On | Selects a mace only when a valid target ray and source-item attack window are ready; the queued mace hit then respects the mace's own attack cooldown |
+| Auto Jump | On | Helps create falling smash windows |
+| Only Attack While Falling | Off | Restricts ordinary attacks to falling |
+| Stun Slam (Axe -> Mace) | On | Axe shield-disable followed by a falling mace hit |
+| Mace Attribute Swap | Off | Same-tick Mace swap for a falling smash using the source weapon's attributes |
+| Sword -> Breach Mace Swap | Off | Situational Breach swap against armored players |
+| Breach Target Armor | 8 | Minimum target armor value |
+| Spear Charge -> Mace Double Pop | Off | Only while charging the main-hand spear; immediate mace hit after confirmed spear contact |
+| Minimum Smash Fall | 1.5 | Minimum fall distance for ordinary mace smash swaps |
+| Restore Original Slot | On | Restores the original hotbar selection |
+| Require Mace Available | Off | Prevents attacks when no mace can be found |
+| Ignore Walls | Off | Skips line-of-sight validation |
+| Entities | Players only by default | Registry-backed multi-select picker, matching AUTISM KillAura; choose exact entity types such as players, zombies, skeletons, or other mobs |
+| Targeting | FOV | Chooses targets by Type, HP, Distance, FOV, Hurt Time, or Age |
+| FOV | 180° | Maximum target cone; 360° allows targets in every direction |
+| Ignore Teammates | On | Skips allied players |
 
-## Build
+Ordinary Mace attacks now follow AUTISM KillAura's combat path: the module arbitrates a silent target rotation, raycasts the target from the camera, validates the held item's native `ATTACK_RANGE`, checks line of sight, and queues an `EntityHitResult` through `AutismCombatClicker`. This replaces direct `gameMode.attack()` calls, which bypassed the client's normal hit-input pipeline. **Only Attack While Falling** is still enforced. Stun Slam keeps the axe selected during setup and switches to the mace only for the queued falling-smash hit.
 
-```
-cd path/to/autism-client
-./gradlew publishToMavenLocal --no-daemon   # one time
+The **Entities** picker is a whitelist: only selected entity types can be targeted. Its default is `minecraft:player`. The selected entity filter and FOV check are shared by ordinary Mace targeting, Stun Slam acquisition, and the spear-charge target scan. The spear scan still requires the entity to be inside the held spear's native attack-range ray.
 
-cd ../autism-mace-hitter
-./gradlew build --no-daemon
-```
 
-Jar lands in `build/libs/` - drop it in your `mods` folder.
 
-## Notes
+## Module: Music Player
 
-- The module interacts with the world through vanilla client methods only;
-  no mixins or packets are injected.
-- Method names follow the official (Mojang) mappings shipped with the
-  client's Loom setup. If a name changed in your exact build, the compiler
-  will point at the line - it is a one-word fix.
+**Music Player** is a standalone module with two playback paths: local audio is decoded and played by the client, while YouTube / YouTube Music URLs are opened in the default browser and controlled through Windows global media keys. The browser path does not extract or copy YouTube audio into Minecraft.
+
+### Playlist sources
+
+Set **Playlist Source** to one of the following:
+
+- A local audio file path, such as `music/fight.mp3` (relative paths are resolved from the Minecraft game directory).
+- A direct audio URL that serves MP3, OGG, WAV, or AIFF audio.
+- A local or remote `.m3u` playlist file. Each track can be a local path or a direct audio URL; relative entries are resolved against the playlist file.
+- Multiple direct file/stream entries separated by semicolons.
+- A YouTube Music or YouTube playlist URL, such as `https://music.youtube.com/playlist?list=...`, or a YouTube video URL. Press **Play Playlist** to open it in the default browser.
+
+For YouTube sources, **P** sends Play/Pause, **]** sends Next Track, **[** sends Previous Track, **Backspace** sends Stop, and **Page Up / Page Down** changes Windows system volume. These global media keys control whichever Windows media session is active, so another media app may receive them if it owns the active session. YouTube playback remains in the browser; the browser may require one manual click on Play before autoplay and media controls work. Shuffle and loop are controlled in the YouTube Music page itself.
+
+The addon bundles Java Sound MP3 and OGG decoders; WAV and AIFF use the Java runtime's built-in audio support. HLS `.m3u8` manifests and protected streaming-service pages are not supported as direct audio streams. Use files or direct audio streams that you have permission to play.
+
+### Controls and settings
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| Playlist Source | Empty | Local file, direct audio URL, `.m3u` playlist, or YouTube / YouTube Music URL (browser handoff) |
+| Auto Start In PvP | On | Starts local playback or opens the configured YouTube page when an enemy player first enters detection range |
+| PvP Detection Range | 12 blocks | Nearby-player detection radius |
+| Require Line Of Sight | On | Only triggers for a visible enemy player |
+| Ignore Teammates | On | Does not trigger for allied players |
+| Pause When PvP Ends | Off | Pauses local playback when PvP ends; external YouTube playback cannot be queried reliably |
+| Shuffle | Off | Randomizes the next track |
+| Loop Mode | Playlist | Off, Track, or Playlist |
+| Player Volume | 80% | Music player output level |
+| Play Playlist Key | M | Loads and starts the configured playlist |
+| Play / Pause Key | P | Pauses or resumes playback |
+| Next Track Key | ] | Skips to the next track |
+| Previous Track Key | [ | Goes to the previous track |
+| Stop Key | Backspace | Stops playback |
+| Volume Up / Down | Page Up / Page Down | Changes player volume in 5% steps |
+| Toggle Shuffle Key | R | Toggles shuffle |
+
+All player keybinds are configurable. Local music continues while the player is in-game and stops when the module is disabled. YouTube Music runs in the external browser session and uses Windows global media keys; disabling the module sends a media Stop command to that session. Audio decoding and network reads for local files/direct streams run off the game thread. Direct audio-stream servers may require a reachable URL and can reject requests or change formats.
+
+## Module: Combat
+
+**Combat** is independent from **Mace** and **Hitflick**. It contains four optional combat utilities plus tracked blocking. A shared per-client-tick attack guard coordinates attack actions with Mace so both modules do not deliberately issue two attacks in the same tick.
+
+- **Tracked Blocking:** tracks each nearby entity's blocking state by entity ID and UUID, records when a block begins/ends, and expires stale tracking records.
+- **Shield Breaker:** on a newly observed blocking window, selects an axe, attacks once, and returns to the configured weapon. It has a cooldown and a configurable tracked disable window. This is an attack-based shield disable; actual disable duration depends on server rules and axe cooldown.
+- **Smart Smash:** checks that the player is falling, the configured fall distance is reached, a target is in range and visible, attack cooldown is ready, and a mace is available. It performs at most one smart-smash attack per fall. Against sufficiently armored players it prefers a Breach mace when one is available.
+- **Spear Counter:** detects nearby players actively using a spear while facing and moving toward the local player. It can briefly backstep/strafe and optionally switch to a sword or axe, then restores the prior hotbar slot if the player has not manually changed it. Detection is heuristic and depends on entity movement updates.
+- **Weapon Optimizer:** selects a hotbar weapon based on the target and current situation: axe for a blocking target, mace (preferably Breach against high armor) during a valid smash window, spear when its item-defined range includes the target at longer distance, otherwise sword/axe/mace fallback. Switching is cooldown-limited.
+
+### Combat settings
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| Entities | Players | Registry-backed entity whitelist |
+| Track Blocking | On | Track nearby blocking state |
+| Shield Breaker | Off | Axe attack on a new blocking window |
+| Shield Breaker Cooldown | 500 ms | Prevent repeated shield-break attempts |
+| Shield Disabled Window | 100 ticks | Local tracking window after axe hit; not a guarantee of server shield-disable time |
+| Shield Breaker Reach | 3.2 | Maximum distance for shield reaction |
+| Return Weapon | Previous | Previous, Sword, Mace, Spear, or Best Weapon |
+| Smart Smash | Off | Context-aware falling mace attack |
+| Smart Smash Minimum Fall | 1.5 | Minimum fall distance |
+| Smart Smash Target Range | 3.2 | Maximum target distance |
+| Restore Slot After Smash | Off | Restore the pre-smash hotbar slot |
+| Spear Counter | Off | Detect an aimed, approaching spear user |
+| Spear Counter Range | 8.0 | Threat scan range |
+| Attacker Facing Angle | 55° | Maximum angle between spear user's view and local player |
+| Counter Action | Backstep | Backstep, strafe, switch sword/axe, or combine switch + backstep |
+| Counter Duration | 4 ticks | Duration of movement/switch assist |
+| Counter Cooldown | 600 ms | Minimum time between counters |
+| Weapon Optimizer | Off | Automatically choose a weapon |
+| High Armor Threshold | 12 | Armor value for Breach/axe preference |
+| Spear Selection Distance | 3.2 | Distance beyond which spear selection is considered |
+| Weapon Switch Cooldown | 250 ms | Prevents rapid hotbar switching |
+| Target Scan Range | 8.0 | Nearby target scan radius |
+| Target Priority | FOV | Type, HP, Distance, FOV, Hurt Time, or Age |
+| FOV | 180° | Target cone; 360° permits all directions |
+| Ignore Walls | Off | Skip line-of-sight checks |
+| Ignore Teammates | On | Skip allied players |
+
+Shield and spear threat detection are client-side observations. Server latency, entity update timing, shield-disable mechanics, and anti-cheat can affect whether an action succeeds. Spear Counter is a reactive movement assist, not a guaranteed dodge or a prediction of the server's exact attack timing.
+
+## Module: Hitflick
+
+**Hitflick** is a separate dropdown module. It sends a brief server-side yaw change immediately before a local attack and restores the original yaw after the attack. It does not change the visible camera rotation.
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| Direction | Alternate | Left, Right, or alternating yaw flick |
+| Flick Angle | 30 degrees | Temporary yaw offset |
+| Require Sprint | Off | Only flick while sprinting |
+| Cooldown | 100 ms | Minimum interval between flicks |
+| Chance | 100% | Random activation chance per eligible attack |
+
+Hitflick changes attack-facing direction only; it does not guarantee a particular knockback result. Server movement validation, latency, and anti-cheat behavior can affect the outcome.
+
+## Macro action
+
+**Slam Now** remains available in the macro editor and attacks the module's current target.
+
+## Browser-only build
+
+The GitHub Actions workflow builds the upstream AUTISM Client API into the runner's Maven Local repository, then builds this addon. No local Codespace, Java installation, or Gradle wrapper is required.
+
+1. Open the repository's **Actions** tab.
+2. Select **Build QYS Addon**.
+3. Run the workflow with **Run workflow**, or let a push trigger it.
+4. Open the completed run and download the **qys-autism-addon** artifact.
+5. Put the resulting JAR in your Minecraft `mods` folder alongside AUTISM Client and Fabric API.
+
+The workflow also runs automatically for pushes and pull requests.

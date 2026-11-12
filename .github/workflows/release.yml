@@ -1,0 +1,69 @@
+name: Publish QYS Addon Release
+
+on:
+  push:
+    branches:
+      - qys-addon-rework
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: github.event.head_commit.message == 'Publish QYS Addon v1.0.6'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout QYS Addon
+        uses: actions/checkout@v4
+
+      - name: Checkout AUTISM Client API source
+        uses: actions/checkout@v4
+        with:
+          repository: AutismDevelopment/Autism-Client
+          path: autism-client
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle 9.5.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+
+      - name: Publish AUTISM Client API to Maven Local
+        run: gradle -p autism-client publishToMavenLocal --no-daemon
+
+      - name: Build QYS Addon
+        run: gradle build --no-daemon --stacktrace
+
+      - name: Point v1.0.6 tag at the exact release commit
+        run: |
+          git tag --force v1.0.6 "$GITHUB_SHA"
+          git push --force origin refs/tags/v1.0.6:refs/tags/v1.0.6
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.6
+          target_commitish: qys-addon-rework
+          name: QYS AUTISM Addon v1.0.6
+          body: |
+            AUTISM KillAura-backed Mace hit pipeline for AUTISM Client 5.0-26.2 (API v3).
+
+            Mace ordinary hits, shield-stun follow-ups, and situational mace swaps now use AUTISM KillAura's pre-movement timing, silent-rotation arbitration, camera ray validation, native item AttackRange checks, line-of-sight validation, and AutismCombatClicker queued attack input instead of direct gameMode.attack calls.
+
+            Preserves the Mace target/entity settings, Stun Slam, Sword -> Breach Mace Swap, Spear Charge -> Mace Double Pop, Combat, Hitflick, and Music Player (including YouTube / YouTube Music browser handoff and Windows media controls).
+
+            CI compilation passed. Test on a separate instance first; actual multiplayer hit registration still depends on server behavior and should be verified in-game.
+
+            Built for Minecraft 26.2, Fabric, Java 25, and AUTISM Client 5.0 API v3. Not for Client 5.1 / API v4.
+          draft: false
+          prerelease: true
+          files: build/libs/qys-autism-addon-1.0.6.jar
+          overwrite_files: true
+          fail_on_unmatched_files: true
