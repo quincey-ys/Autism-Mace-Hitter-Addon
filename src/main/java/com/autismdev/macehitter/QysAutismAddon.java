@@ -168,11 +168,13 @@ public final class QysAutismAddon extends SimpleAddon {
 
         @Override
         public void tick() {
-            if (!isEnabled() && id().equals(AutismKillAuraRotation.currentOwner())
-                && MC.player != null) {
-                AutismKillAuraRotation.update(id(), MC.player);
-                rotationActive = id().equals(AutismKillAuraRotation.currentOwner())
-                    && AutismKillAuraRotation.hasCurrentRotation();
+            if (!isEnabled() && MC.player != null) {
+                processPendingRestore(MC, MC.player);
+                if (id().equals(AutismKillAuraRotation.currentOwner())) {
+                    AutismKillAuraRotation.update(id(), MC.player);
+                    rotationActive = id().equals(AutismKillAuraRotation.currentOwner())
+                        && AutismKillAuraRotation.hasCurrentRotation();
+                }
             }
         }
 
@@ -226,7 +228,10 @@ public final class QysAutismAddon extends SimpleAddon {
             && player.getInventory().getSelectedSlot() == pendingRestoreFromSlot) {
             restoreSlot(mc, player, pendingRestoreSlot);
         }
-        clearPendingRestore();
+        if (player == null || player.getInventory().getSelectedSlot() != pendingRestoreFromSlot
+            || player.getInventory().getSelectedSlot() == pendingRestoreSlot) {
+            clearPendingRestore();
+        }
         releaseJump(mc);
         clearSpearTracking();
         currentTarget = null;
@@ -547,15 +552,14 @@ public final class QysAutismAddon extends SimpleAddon {
 
         if (!isSmashReady(player, module)) return;
 
-        // The axe setup is complete. Equip the mace on this smash window,
-        // then queue its hit using KillAura's regular input pipeline.
+        // The axe setup is complete. The source axe's ready window authorizes
+        // the same-tick mace swap; queue the follow-up through KillAura.
         if (player.getInventory().getSelectedSlot() != stunMaceSlot) {
             if (player.getAttackStrengthScale(0.5F) < 0.9F) return;
-            selectSlot(mc, player, stunMaceSlot, module);
-            return;
+            if (!selectSlot(mc, player, stunMaceSlot, module)) return;
         }
 
-        if (queueMaceAttack(mc, player, stunTarget, module, false)) {
+        if (queueMaceAttack(mc, player, stunTarget, module, true)) {
             if (module.getBool("restore-slot")) {
                 scheduleSlotRestore(player, stunReturnSlot);
             }
@@ -641,15 +645,6 @@ public final class QysAutismAddon extends SimpleAddon {
             if (player.getInventory().getItem(i).getItem() instanceof AxeItem) return i;
         }
         return -1;
-    }
-
-    private boolean ensureMace(LocalPlayer player, SimpleModule module) {
-        if (player.getMainHandItem().getItem() instanceof MaceItem) return true;
-        if (!module.getBool("auto-swap")) return false;
-        int slot = findMaceSlot(player);
-        if (slot < 0) return false;
-        selectSlot(player, slot);
-        return true;
     }
 
     private boolean isSpear(ItemStack stack) {
@@ -810,15 +805,17 @@ public final class QysAutismAddon extends SimpleAddon {
     private void processPendingRestore(Minecraft mc, LocalPlayer player) {
         if (pendingRestoreSlot < 0 || player.tickCount <= pendingRestoreTick) return;
         int selected = player.getInventory().getSelectedSlot();
-        if (selected == pendingRestoreFromSlot && maceModule != null
-            && AutismHandArbiter.beginHandPacketGroup(maceModule.id())) {
-            try {
-                AutismInventoryHelper.restoreHotbarSlot(mc, pendingRestoreSlot);
-            } finally {
-                AutismHandArbiter.endHandPacketGroup(maceModule.id());
-            }
+        if (selected != pendingRestoreFromSlot) {
+            clearPendingRestore();
+            return;
         }
-        clearPendingRestore();
+        if (maceModule == null || !AutismHandArbiter.beginHandPacketGroup(maceModule.id())) return;
+        try {
+            AutismInventoryHelper.restoreHotbarSlot(mc, pendingRestoreSlot);
+            clearPendingRestore();
+        } finally {
+            AutismHandArbiter.endHandPacketGroup(maceModule.id());
+        }
     }
 
     private void clearPendingRestore() {
