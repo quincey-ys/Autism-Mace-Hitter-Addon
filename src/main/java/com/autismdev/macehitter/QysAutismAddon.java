@@ -245,7 +245,8 @@ public final class QysAutismAddon extends SimpleAddon {
         // Shield users get the axe first. The follow-up mace hit waits for a
         // true falling smash window instead of issuing two same-tick attacks.
         if (isBlocking(target) && module.getBool("shield-stun") && axeSlot >= 0 && maceSlot >= 0) {
-            if (player.getAttackStrengthScale(0.5F) < 0.9F) {
+            if (player.getAttackStrengthScale(0.5F) < 0.9F
+                || !claimAttackTick(player.tickCount)) {
                 return;
             }
             selectSlot(player, axeSlot);
@@ -294,7 +295,8 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
-        if (!module.getBool("falling-only") || isFalling(player)) {
+        if ((!module.getBool("falling-only") || isFalling(player))
+            && claimAttackTick(player.tickCount)) {
             mc.gameMode.attack(player, target);
             delayCounter = module.getInt("delay");
         }
@@ -469,6 +471,7 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
+        if (!claimAttackTick(player.tickCount)) return;
         mc.gameMode.attack(player, stunTarget);
         if (module.getBool("restore-slot")) {
             restoreSlot(mc, player, stunReturnSlot);
@@ -504,6 +507,7 @@ public final class QysAutismAddon extends SimpleAddon {
     ) {
         // Same-tick item attribute swap: equip the mace, let vanilla attack send
         // the selected-slot update before the attack packet, then restore source.
+        if (!claimAttackTick(player.tickCount)) return;
         selectSlot(player, swapSlot);
         mc.gameMode.attack(player, target);
         if (restore) {
@@ -600,7 +604,8 @@ public final class QysAutismAddon extends SimpleAddon {
         LocalPlayer player = mc.player;
         if (player == null || mc.level == null || mc.gameMode == null) return;
         Entity target = currentTarget != null && currentTarget.isAlive() ? currentTarget : null;
-        if (target != null && player.distanceTo(target) <= 6.0) {
+        if (target != null && player.distanceTo(target) <= 6.0
+            && claimAttackTick(player.tickCount)) {
             rotateTo(player, target);
             mc.gameMode.attack(player, target);
         }
