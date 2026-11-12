@@ -119,7 +119,6 @@ public final class QysAutismAddon extends SimpleAddon {
         if (player == null || mc.level == null || mc.gameMode == null || !player.isAlive()) {
             releaseJump(mc);
             clearSpearTracking();
-            clearSpearFollowup();
             stunTarget = null;
             stunMaceSlot = -1;
             stunReturnSlot = -1;
@@ -373,6 +372,7 @@ public final class QysAutismAddon extends SimpleAddon {
 
     private Entity findTarget(Minecraft mc, SimpleModule module) {
         LocalPlayer player = mc.player;
+        double range = module.getDouble("range");
         boolean ignoreWalls = module.getBool("ignore-walls");
 
         Entity best = null;
