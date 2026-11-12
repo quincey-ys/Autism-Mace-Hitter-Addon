@@ -519,15 +519,13 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
-        if (module.getBool("rotate")) {
-            rotateTo(player, spearChargeTarget);
-        }
-
-        performAttributeSwap(
+        updateMaceRotation(player, spearChargeTarget, module);
+        if (performAttributeSwap(
             mc, player, spearChargeTarget, maceSlot, spearChargeSlot,
-            module.getBool("restore-slot")
-        );
-        delayCounter = module.getInt("delay");
+            module.getBool("restore-slot"), module
+        )) {
+            delayCounter = module.getInt("delay");
+        }
     }
 
     private void tickStunSlam(Minecraft mc, LocalPlayer player, SimpleModule module) {
@@ -539,9 +537,7 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
-        if (module.getBool("rotate")) {
-            rotateTo(player, stunTarget);
-        }
+        updateMaceRotation(player, stunTarget, module);
 
         if (stunMaceSlot < 0 || stunMaceSlot > 8
             || !(player.getInventory().getItem(stunMaceSlot).getItem() instanceof MaceItem)) {
@@ -549,24 +545,26 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
-        boolean smashReady = isSmashReady(player, module);
-        boolean cooldownReady = player.getAttackStrengthScale(0.5F) >= 0.9F;
-        if (!smashReady || !cooldownReady || !claimAttackTick(player.tickCount)) {
+        if (!isSmashReady(player, module)) return;
+
+        // The axe setup is complete. Equip the mace on this smash window,
+        // then queue its hit using KillAura's regular input pipeline.
+        if (player.getInventory().getSelectedSlot() != stunMaceSlot) {
+            if (player.getAttackStrengthScale(0.5F) < 0.9F) return;
+            selectSlot(mc, player, stunMaceSlot, module);
             return;
         }
 
-        // Keep the axe selected throughout the setup. Equip the mace only on
-        // the tick the falling smash can actually be sent.
-        selectSlot(player, stunMaceSlot);
-        mc.gameMode.attack(player, stunTarget);
-        if (module.getBool("restore-slot")) {
-            restoreSlot(mc, player, stunReturnSlot);
+        if (queueMaceAttack(mc, player, stunTarget, module, false)) {
+            if (module.getBool("restore-slot")) {
+                scheduleSlotRestore(player, stunReturnSlot);
+            }
+            stunTarget = null;
+            stunMaceSlot = -1;
+            stunReturnSlot = -1;
+            stunTicks = 0;
+            delayCounter = module.getInt("delay");
         }
-        stunTarget = null;
-        stunMaceSlot = -1;
-        stunReturnSlot = -1;
-        stunTicks = 0;
-        delayCounter = module.getInt("delay");
     }
 
     private Entity findTarget(Minecraft mc, SimpleModule module) {
@@ -587,18 +585,22 @@ public final class QysAutismAddon extends SimpleAddon {
         return candidates.isEmpty() ? null : candidates.get(0);
     }
 
-    private void performAttributeSwap(
+    private boolean performAttributeSwap(
         Minecraft mc, LocalPlayer player, Entity target,
-        int swapSlot, int originalSlot, boolean restore
+        int swapSlot, int originalSlot, boolean restore, SimpleModule module
     ) {
-        // Same-tick item attribute swap: equip the mace, let vanilla attack send
-        // the selected-slot update before the attack packet, then restore source.
-        if (!claimAttackTick(player.tickCount)) return;
-        selectSlot(player, swapSlot);
-        mc.gameMode.attack(player, target);
-        if (restore) {
+        // Change the held stack before the keybind attack is queued so the server
+        // evaluates the mace attributes on the hit. Restore on the next tick,
+        // never in the same input frame.
+        if (swapSlot < 0 || swapSlot > 8) return false;
+        if (!selectSlot(mc, player, swapSlot, module)) return false;
+        boolean queued = queueMaceAttack(mc, player, target, module, true);
+        if (queued && restore) {
+            scheduleSlotRestore(player, originalSlot);
+        } else if (!queued && restore) {
             restoreSlot(mc, player, originalSlot);
         }
+        return queued;
     }
 
     private int findMaceSlot(LocalPlayer player) {
@@ -675,32 +677,165 @@ public final class QysAutismAddon extends SimpleAddon {
         return isFalling(player) && player.fallDistance >= module.getDouble("min-fall-distance");
     }
 
-    private void rotateTo(LocalPlayer player, Entity target) {
-        double dx = target.getX() - player.getX();
-        double dz = target.getZ() - player.getZ();
-        double dy = target.getEyeY() - player.getEyeY();
-        double horizontal = Math.sqrt(dx * dx + dz * dz);
-        float yaw = (float) (Math.atan2(dz, dx) * 180.0 / Math.PI) - 90.0F;
-        float pitch = (float) (-(Math.atan2(dy, horizontal) * 180.0 / Math.PI));
-        player.setYRot(yaw);
-        player.setXRot(pitch);
+    private AutismRotationUtil.Rotation updateMaceRotation(
+        LocalPlayer player, Entity target, SimpleModule module
+    ) {
+        if (!module.getBool("rotate")) {
+            stopMaceRotation(player, module);
+            return currentMaceRotation(player, module);
+        }
+        AutismRotationUtil.Rotation desired = AutismRotationUtil.lookingAt(
+            target.getBoundingBox().getCenter(), player.getEyePosition());
+        AutismKillAuraRotation.setTarget(
+            module.id(), AutismKillAuraRotation.PRIORITY_KILL_AURA + 1, desired);
+        AutismKillAuraRotation.update(
+            module.id(), player, AutismKillAuraRotation.TURN_SPEED, AutismKillAuraRotation.TURN_SPEED);
+
+        boolean ownsRotation = module.id().equals(AutismKillAuraRotation.currentOwner())
+            && AutismKillAuraRotation.hasCurrentRotation();
+        if (maceModule != null) maceModule.setRotationActive(ownsRotation);
+        return ownsRotation ? AutismKillAuraRotation.getCurrentRotation() : null;
+    }
+
+    private void stopMaceRotation(LocalPlayer player, SimpleModule module) {
+        if (module.id().equals(AutismKillAuraRotation.currentOwner())) {
+            AutismKillAuraRotation.beginWindDown(module.id());
+            AutismKillAuraRotation.update(module.id(), player);
+            boolean active = module.id().equals(AutismKillAuraRotation.currentOwner())
+                && AutismKillAuraRotation.hasCurrentRotation();
+            if (maceModule != null) maceModule.setRotationActive(active);
+        } else if (maceModule != null) {
+            maceModule.setRotationActive(false);
+        }
+    }
+
+    private AutismRotationUtil.Rotation currentMaceRotation(LocalPlayer player, SimpleModule module) {
+        if (module.id().equals(AutismKillAuraRotation.currentOwner())) {
+            AutismRotationUtil.Rotation current = AutismKillAuraRotation.getCurrentRotation();
+            if (current != null) return current;
+        }
+        return AutismRotationUtil.playerRotation(player);
+    }
+
+    private EntityHitResult findAttackHit(
+        Minecraft mc, LocalPlayer player, Entity target, SimpleModule module
+    ) {
+        if (target == null || !target.isAlive() || mc.level == null) return null;
+        Entity camera = mc.getCameraEntity();
+        if (camera == null || camera != player) return null;
+
+        AutismRotationUtil.Rotation rotation;
+        if (module.getBool("rotate")) {
+            if (!module.id().equals(AutismKillAuraRotation.currentOwner())) return null;
+            rotation = AutismKillAuraRotation.getCurrentRotation();
+            if (rotation == null) return null;
+        } else {
+            rotation = currentMaceRotation(player, module);
+        }
+
+        double interactionRange = player.getAttributeValue(Attributes.ENTITY_INTERACTION_RANGE);
+        double range = Math.min(module.getDouble("range"), interactionRange);
+        if (range <= 0.0D) return null;
+
+        Vec3 eyes = camera.getEyePosition();
+        Vec3 direction = Vec3.directionFromRotation(rotation.pitch(), rotation.yaw());
+        Vec3 end = eyes.add(direction.scale(range));
+        AABB search = camera.getBoundingBox()
+            .expandTowards(direction.scale(range)).inflate(1.0D, 1.0D, 1.0D);
+        EntityHitResult hit = ProjectileUtil.getEntityHitResult(
+            camera, eyes, end, search, EntitySelector.CAN_BE_PICKED.and(entity -> entity == target),
+            range * range);
+        if (hit == null || hit.getEntity() != target) return null;
+
+        AttackRange attackRange = player.getMainHandItem().get(DataComponents.ATTACK_RANGE);
+        if (attackRange == null) attackRange = AttackRange.defaultFor(player);
+        if (!attackRange.isInRange(player, hit.getLocation())) return null;
+
+        if (!module.getBool("ignore-walls")) {
+            HitResult wall = mc.level.clip(new ClipContext(
+                eyes, hit.getLocation(), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, camera));
+            if (wall.getType() != HitResult.Type.MISS) return null;
+        }
+        return hit;
+    }
+
+    private boolean queueMaceAttack(
+        Minecraft mc, LocalPlayer player, Entity target, SimpleModule module, boolean bypassCooldown
+    ) {
+        if (mc.gameMode == null || mc.getConnection() == null || mc.gui == null
+            || mc.gui.screen() != null || mc.gui.overlay() != null
+            || player.isSpectator() || player.isDeadOrDying() || player.isUsingItem()) return false;
+
+        ItemStack stack = player.getMainHandItem();
+        if (stack.isEmpty() || !stack.isItemEnabled(mc.level.enabledFeatures())
+            || player.cannotAttackWithItem(stack, 0)) return false;
+        if (!bypassCooldown && player.getAttackStrengthScale(0.5F) < 0.9F) return false;
+
+        EntityHitResult hit = findAttackHit(mc, player, target, module);
+        if (hit == null || lastQueuedMaceAttackTick == player.tickCount) return false;
+        if (!claimAttackTick(player.tickCount)) return false;
+
+        if (!AutismHandArbiter.beginHandPacketGroup(module.id())) return false;
+        try {
+            syncSelectedSlot(mc);
+        } finally {
+            AutismHandArbiter.endHandPacketGroup(module.id());
+        }
+
+        if (!AutismCombatClicker.queueAttack(hit)) return false;
+        player.resetAttackStrengthTicker();
+        lastQueuedMaceAttackTick = player.tickCount;
+        return true;
+    }
+
+    private boolean selectSlot(Minecraft mc, LocalPlayer player, int slot, SimpleModule module) {
+        if (slot < 0 || slot > 8) return false;
+        if (player.getInventory().getSelectedSlot() == slot) return true;
+        if (!AutismHandArbiter.beginHandPacketGroup(module.id())) return false;
+        try {
+            AutismInventoryHelper.selectHotbarSlot(mc, slot);
+        } finally {
+            AutismHandArbiter.endHandPacketGroup(module.id());
+        }
+        return player.getInventory().getSelectedSlot() == slot;
+    }
+
+    private void scheduleSlotRestore(LocalPlayer player, int returnSlot) {
+        if (returnSlot < 0 || returnSlot > 8) return;
+        pendingRestoreSlot = returnSlot;
+        pendingRestoreFromSlot = player.getInventory().getSelectedSlot();
+        pendingRestoreTick = player.tickCount;
+    }
+
+    private void processPendingRestore(Minecraft mc, LocalPlayer player) {
+        if (pendingRestoreSlot < 0 || player.tickCount <= pendingRestoreTick) return;
+        int selected = player.getInventory().getSelectedSlot();
+        if (selected == pendingRestoreFromSlot && maceModule != null
+            && AutismHandArbiter.beginHandPacketGroup(maceModule.id())) {
+            try {
+                AutismInventoryHelper.restoreHotbarSlot(mc, pendingRestoreSlot);
+            } finally {
+                AutismHandArbiter.endHandPacketGroup(maceModule.id());
+            }
+        }
+        clearPendingRestore();
+    }
+
+    private void clearPendingRestore() {
+        pendingRestoreSlot = -1;
+        pendingRestoreFromSlot = -1;
+        pendingRestoreTick = Integer.MIN_VALUE;
     }
 
     private void manualSlam(Minecraft mc) {
         LocalPlayer player = mc.player;
-        if (player == null || mc.level == null || mc.gameMode == null) return;
+        if (player == null || mc.level == null || maceModule == null) return;
         Entity target = currentTarget != null && currentTarget.isAlive() ? currentTarget : null;
-        if (target != null && player.distanceTo(target) <= 6.0
-            && claimAttackTick(player.tickCount)) {
-            rotateTo(player, target);
-            mc.gameMode.attack(player, target);
+        if (target == null || player.distanceTo(target) > 6.0D) return;
+        updateMaceRotation(player, target, maceModule);
+        if (queueMaceAttack(mc, player, target, maceModule, false)) {
+            delayCounter = maceModule.getInt("delay");
         }
-    }
-
-    private void selectSlot(LocalPlayer player, int slot) {
-        if (slot < 0 || slot > 8 || player.getInventory().getSelectedSlot() == slot) return;
-        player.getInventory().setSelectedSlot(slot);
-        player.getInventory().setChanged();
     }
 
     private void syncSelectedSlot(Minecraft mc) {
@@ -710,9 +845,13 @@ public final class QysAutismAddon extends SimpleAddon {
     }
 
     private void restoreSlot(Minecraft mc, LocalPlayer player, int slot) {
-        if (slot < 0 || slot > 8) return;
-        selectSlot(player, slot);
-        syncSelectedSlot(mc);
+        if (slot < 0 || slot > 8 || maceModule == null) return;
+        if (!AutismHandArbiter.beginHandPacketGroup(maceModule.id())) return;
+        try {
+            AutismInventoryHelper.restoreHotbarSlot(mc, slot);
+        } finally {
+            AutismHandArbiter.endHandPacketGroup(maceModule.id());
+        }
     }
 
     private void cancelStun(Minecraft mc, LocalPlayer player) {
