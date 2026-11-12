@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    if: github.event.head_commit.message == 'Publish QYS Addon v1.0.0'
+    if: github.event.head_commit.message == 'Publish QYS Addon v1.0.1'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -44,13 +44,15 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: QYS AUTISM Addon v1.0.0
+          tag_name: v1.0.1
+          name: QYS AUTISM Addon v1.0.1
           body: |
-            First packaged release of the QYS AUTISM Addon for Minecraft 26.2.
+            Compatibility fix for AUTISM Client 5.0-26.2 (API v3).
 
-            Includes the Mace, Combat, and Hitflick modules. This build has passed CI compilation; in-game behavior should still be tested on a separate instance before regular use.
+            The previous metadata incorrectly required the development-suffixed client version. This release declares the stable 5.0-26.2 host version. It is not a Client 5.1 / API v4 build.
+
+            Includes the Mace, Combat, and Hitflick modules. CI compilation passed; in-game behavior should still be tested on a separate instance before regular use.
           draft: false
           prerelease: true
-          files: build/libs/qys-autism-addon-1.0.0.jar
+          files: build/libs/qys-autism-addon-1.0.1.jar
           fail_on_unmatched_files: true
