@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    if: github.event.head_commit.message == 'Publish QYS Addon v1.0.5'
+    if: github.event.head_commit.message == 'Publish QYS Addon v1.0.6'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -41,27 +41,29 @@ jobs:
       - name: Build QYS Addon
         run: gradle build --no-daemon --stacktrace
 
-      - name: Point v1.0.5 tag at the exact release commit
+      - name: Point v1.0.6 tag at the exact release commit
         run: |
-          git tag --force v1.0.5 "$GITHUB_SHA"
-          git push --force origin refs/tags/v1.0.5:refs/tags/v1.0.5
+          git tag --force v1.0.6 "$GITHUB_SHA"
+          git push --force origin refs/tags/v1.0.6:refs/tags/v1.0.6
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.5
+          tag_name: v1.0.6
           target_commitish: qys-addon-rework
-          name: QYS AUTISM Addon v1.0.5
+          name: QYS AUTISM Addon v1.0.6
           body: |
-            YouTube / YouTube Music browser handoff and Windows media controls for AUTISM Client 5.0-26.2 (API v3).
+            AUTISM KillAura-backed Mace hit pipeline for AUTISM Client 5.0-26.2 (API v3).
 
-            Music Player now recognizes YouTube and YouTube Music video / playlist URLs and opens them in the default browser instead of trying to decode the webpage as an audio file. Play/Pause, Next, Previous, Stop, and system-volume controls are sent through Windows global media keys. Browser playback remains in the browser; a manual click on Play may be required by browser autoplay policy. Protected YouTube audio is not extracted into Minecraft.
+            Mace ordinary hits, shield-stun follow-ups, and situational mace swaps now use AUTISM KillAura's pre-movement timing, silent-rotation arbitration, camera ray validation, native item AttackRange checks, line-of-sight validation, and AutismCombatClicker queued attack input instead of direct gameMode.attack calls.
 
-            Keeps local MP3 / OGG / WAV / AIFF playback, M3U playlists, the Mace, Combat, and Hitflick modules. CI compilation passed; test in-game behavior on a separate instance before regular use.
+            Preserves the Mace target/entity settings, Stun Slam, Sword -> Breach Mace Swap, Spear Charge -> Mace Double Pop, Combat, Hitflick, and Music Player (including YouTube / YouTube Music browser handoff and Windows media controls).
+
+            CI compilation passed. Test on a separate instance first; actual multiplayer hit registration still depends on server behavior and should be verified in-game.
 
             Built for Minecraft 26.2, Fabric, Java 25, and AUTISM Client 5.0 API v3. Not for Client 5.1 / API v4.
           draft: false
           prerelease: true
-          files: build/libs/qys-autism-addon-1.0.5.jar
+          files: build/libs/qys-autism-addon-1.0.6.jar
           overwrite_files: true
           fail_on_unmatched_files: true
