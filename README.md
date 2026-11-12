@@ -23,7 +23,7 @@ The spear double-pop's extended range is gated by the held spear's actual item-d
 | Normal Range | 3.2 | Ordinary target range |
 | Attack Delay | 0 ticks | Delay between ordinary attacks |
 | Rotate to Target | On | Faces the current target |
-| Auto Equip Mace | On | Selects a mace from the hotbar |
+| Auto Equip Mace | On | Equips a mace on the same tick as a ready attack; does not switch early while waiting for falling state or attack cooldown |
 | Auto Jump | On | Helps create falling smash windows |
 | Only Attack While Falling | Off | Restricts ordinary attacks to falling |
 | Stun Slam (Axe -> Mace) | On | Axe shield-disable followed by a falling mace hit |
@@ -39,6 +39,8 @@ The spear double-pop's extended range is gated by the held spear's actual item-d
 | Targeting | FOV | Chooses targets by Type, HP, Distance, FOV, Hurt Time, or Age |
 | FOV | 180° | Maximum target cone; 360° allows targets in every direction |
 | Ignore Teammates | On | Skips allied players |
+
+With **Auto Equip Mace** enabled, the module waits until a valid attack window is open before changing the selected slot. It respects **Only Attack While Falling** and the vanilla attack cooldown, so the mace is not equipped early while waiting for a smash. Stun Slam also keeps the axe selected during its setup and switches to the mace only on the actual falling-smash tick.
 
 The **Entities** picker is a whitelist: only selected entity types can be targeted. Its default is `minecraft:player`. The selected entity filter and FOV check are shared by ordinary Mace targeting, Stun Slam acquisition, and the spear-charge target scan. The spear scan still requires the entity to be inside the held spear's native attack-range ray.
 
