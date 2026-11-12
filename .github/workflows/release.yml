@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    if: github.event.head_commit.message == 'Publish QYS Addon v1.0.1'
+    if: github.event.head_commit.message == 'Publish QYS Addon v1.0.2'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -44,15 +44,17 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.1
-          name: QYS AUTISM Addon v1.0.1
+          tag_name: v1.0.2
+          name: QYS AUTISM Addon v1.0.2
           body: |
-            Compatibility fix for AUTISM Client 5.0-26.2 (API v3).
+            Attack-ready auto-equip update for AUTISM Client 5.0-26.2 (API v3).
+
+            Auto Equip Mace now switches only when the configured attack window and vanilla attack cooldown are ready. Stun Slam holds the axe during setup and equips the mace only for the actual falling smash.
 
             The previous metadata incorrectly required the development-suffixed client version. This release declares the stable 5.0-26.2 host version. It is not a Client 5.1 / API v4 build.
 
             Includes the Mace, Combat, and Hitflick modules. CI compilation passed; in-game behavior should still be tested on a separate instance before regular use.
           draft: false
           prerelease: true
-          files: build/libs/qys-autism-addon-1.0.1.jar
+          files: build/libs/qys-autism-addon-1.0.2.jar
           fail_on_unmatched_files: true
