@@ -4,7 +4,8 @@
   "package": "com.autismdev.macehitter.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
-    "MultiPlayerGameModeInvoker"
+    "MultiPlayerGameModeInvoker",
+    "MultiPlayerGameModeHitflickMixin"
   ],
   "injectors": {
     "defaultRequire": 1
