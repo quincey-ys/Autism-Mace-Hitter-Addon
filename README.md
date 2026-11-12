@@ -9,12 +9,12 @@ The Fabric mod ID remains `autism-mace-hitter` intentionally so AUTISM Client ca
 The former Mace Hitter module is now named **Mace**.
 
 - **Stun Slam (Axe -> Mace):** attacks a raised shield with an axe, then waits for a valid falling mace smash.
-- **Sword -> Breach Mace Swap:** when a sword is held and an armored player is in ordinary melee range, attacks with the sword and switches to a Breach-enchanted mace immediately afterward for the situational post-attack attribute swap. This depends on server-side attribute-swap behavior.
-- **Mace Attribute Swap:** optionally switches to the mace immediately after a falling attack to attempt the post-attack attribute swap.
-- **Spear Charge -> Mace Double Pop:** tracks a genuine spear use/charge, detects a confirmed spear hit, switches to the mace, then waits for the target's hurt window to clear and for a legal-range falling smash before attempting the second hit.
+- **Sword -> Breach Mace Swap:** when a sword is held and an armored player is in ordinary melee range, selects a Breach-enchanted mace for the attack while retaining the sword's pre-swap attributes for the same-tick hit. This depends on server-side attribute-swap behavior.
+- **Mace Attribute Swap:** optionally selects the mace for a falling smash while retaining the source weapon's attributes for the same-tick hit.
+- **Spear Charge -> Mace Double Pop:** this path is active only while the player is actively charging a main-hand spear. It uses the spear's native `ATTACK_RANGE` component to find a target that can actually be reached by the spear. Once a spear hit is confirmed by the target's hurt-time/health update, it immediately selects the mace, attacks once, and restores the spear in the same tick. There is no extra fall-distance gate, hurt-reset wait, or delayed follow-up timer.
 - **Slot restoration:** optionally restores and synchronizes the original hotbar slot after a combo.
 
-The spear double-pop does not force mace reach to equal spear reach. The follow-up uses the mace's own legal range; servers can still reject a second hit due to damage immunity, timing, or anti-cheat.
+The spear double-pop's extended range is gated by the held spear's actual item-defined attack range; it is not active while the player is idle, holding a different item, or merely carrying a spear. The immediate mace follow-up uses a same-tick attribute swap. Servers can still reject or normalize the swap, and the spear hit must be observable by the client before the follow-up can be triggered.
 
 ### Mace settings
 
@@ -30,11 +30,8 @@ The spear double-pop does not force mace reach to equal spear reach. The follow-
 | Mace Attribute Swap | Off | Post-attack mace attribute swap during a smash |
 | Sword -> Breach Mace Swap | Off | Situational Breach swap against armored players |
 | Breach Target Armor | 8 | Minimum target armor value |
-| Spear Charge -> Mace Double Pop | Off | Detects a spear hit, then attempts a mace smash follow-up |
-| Spear Charge Tracking Range | 4.5 | Maximum range for spear-charge tracking |
-| Minimum Smash Fall | 1.5 | Minimum fall distance for smash combos |
-| Spear Follow-up Window | 40 ticks | Maximum time allowed for the second hit |
-| Wait for Target Hurt Window | On | Waits for target hurt time to clear |
+| Spear Charge -> Mace Double Pop | Off | Only while charging the main-hand spear; immediate mace hit after confirmed spear contact |
+| Minimum Smash Fall | 1.5 | Minimum fall distance for ordinary mace smash swaps |
 | Restore Original Slot | On | Restores the original hotbar selection |
 | Require Mace Available | Off | Prevents attacks when no mace can be found |
 | Ignore Walls | Off | Skips line-of-sight validation |
