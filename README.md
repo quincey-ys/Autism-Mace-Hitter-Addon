@@ -35,8 +35,12 @@ The spear double-pop's extended range is gated by the held spear's actual item-d
 | Restore Original Slot | On | Restores the original hotbar selection |
 | Require Mace Available | Off | Prevents attacks when no mace can be found |
 | Ignore Walls | Off | Skips line-of-sight validation |
-| Target Mode | Players | Players or all living entities |
+| Entities | Players only by default | Registry-backed multi-select picker, matching AUTISM KillAura; choose exact entity types such as players, zombies, skeletons, or other mobs |
+| Targeting | FOV | Chooses targets by Type, HP, Distance, FOV, Hurt Time, or Age |
+| FOV | 180° | Maximum target cone; 360° allows targets in every direction |
 | Ignore Teammates | On | Skips allied players |
+
+The **Entities** picker is a whitelist: only selected entity types can be targeted. Its default is `minecraft:player`. The selected entity filter and FOV check are shared by ordinary Mace targeting, Stun Slam acquisition, and the spear-charge target scan. The spear scan still requires the entity to be inside the held spear's native attack-range ray.
 
 ## Module: Hitflick
 
