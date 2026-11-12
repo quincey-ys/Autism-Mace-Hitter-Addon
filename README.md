@@ -48,26 +48,41 @@ The **Entities** picker is a whitelist: only selected entity types can be target
 
 ## Module: Music Player
 
-**Music Player** is a standalone module and is independent of Combat, Mace, and Hitflick. Configure any YouTube Music playlist URL in its settings, then use its keybinds or let it open the playlist when a nearby enemy player enters the configured PvP detection range.
+**Music Player** is a standalone in-game audio player. It decodes audio on a background thread and plays it through the local client audio output; it does not launch a browser.
+
+### Playlist sources
+
+Set **Playlist Source** to one of the following:
+
+- A local audio file path, such as `music/fight.mp3` (relative paths are resolved from the Minecraft game directory).
+- A direct audio URL that serves MP3, OGG, WAV, or AIFF audio.
+- A local or remote `.m3u` playlist file. Each track can be a local path or a direct audio URL; relative entries are resolved against the playlist file.
+- Multiple direct file/stream entries separated by semicolons.
+
+The addon bundles Java Sound MP3 and OGG decoders; WAV and AIFF use the Java runtime's built-in audio support. A YouTube Music or YouTube playlist page is not a direct audio stream, so those web-page links are not playable sources. Use files or direct audio streams that you have permission to play.
+
+### Controls and settings
 
 | Setting | Default | Purpose |
 |---|---:|---|
-| YouTube Music Playlist URL | Empty | Any YouTube Music playlist link containing a playlist ID |
-| Auto Open In PvP | On | Opens the configured playlist once when an enemy player enters the detection range |
-| PvP Detection Range | 12 blocks | Nearby-player radius used for automatic launch |
-| Require Line Of Sight | On | Requires a visible player for PvP auto-detection |
+| Playlist Source | Empty | Local file, direct audio URL, or `.m3u` playlist |
+| Auto Start In PvP | On | Starts the playlist when an enemy player first enters the detection range |
+| PvP Detection Range | 12 blocks | Nearby-player detection radius |
+| Require Line Of Sight | On | Only triggers for a visible enemy player |
 | Ignore Teammates | On | Does not trigger for allied players |
-| Enable Media Controls | On | Enables system-wide media and volume key actions |
-| Open Playlist Key | M | Opens the configured playlist manually |
-| Play / Pause Key | P | Sends the OS Play/Pause media key |
-| Next Track Key | ] | Sends the OS Next Track media key |
-| Previous Track Key | [ | Sends the OS Previous Track media key |
-| Volume Up Key | = | Raises system volume |
-| Volume Down Key | - | Lowers system volume |
+| Pause When PvP Ends | Off | Pauses music when the detected PvP session ends, only if PvP started it |
+| Shuffle | Off | Randomizes the next track |
+| Loop Mode | Playlist | Off, Track, or Playlist |
+| Player Volume | 80% | Music player output level |
+| Play Playlist Key | M | Loads and starts the configured playlist |
+| Play / Pause Key | P | Pauses or resumes playback |
+| Next Track Key | ] | Skips to the next track |
+| Previous Track Key | [ | Goes to the previous track |
+| Stop Key | Backspace | Stops playback |
+| Volume Up / Down | Page Up / Page Down | Changes player volume in 5% steps |
+| Toggle Shuffle Key | R | Toggles shuffle |
 
-The playlist URL is configurable, so no specific song or playlist is hardcoded. Automatic launch is edge-triggered: it opens once when PvP is first detected, not every tick while a player remains nearby. The detection is proximity-based, so adjust the range or disable **Auto Open In PvP** when you do not want nearby players alone to launch music.
-
-Media controls are sent to the operating system's active media session. They can control YouTube Music when its browser session owns the media session, but may affect another active media app instead. Opening a playlist cannot guarantee autoplay; browser settings, sign-in state, and autoplay restrictions may still require a click in the browser.
+All player keybinds are configurable. Music continues while the player is in-game and stops when the module is disabled. Audio decoding and network reads run off the game thread. Direct audio-stream servers may require a reachable URL and can reject requests or change formats; HLS `.m3u8` manifests and protected streaming-service pages are not supported.
 
 ## Module: Combat
 

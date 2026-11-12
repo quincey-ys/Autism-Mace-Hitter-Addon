@@ -3,7 +3,7 @@
   "id": "autism-mace-hitter",
   "version": "${version}",
   "name": "QYS Addon",
-  "description": "QYS AUTISM Client addon with situational axe stun slams, spear-reach swaps, and mace attribute swaps.",
+  "description": "QYS AUTISM Client addon with Mace, Combat, Hitflick, and an in-game music player.",
   "authors": [
     "quincey-ys"
   ],

@@ -19,6 +19,13 @@ dependencies {
     implementation(libs.fabric.loader)
     implementation(libs.fabric.api)
     implementation(libs.autism)
+
+    // Nested Java Sound codecs for MP3 and OGG playback inside the client.
+    include("com.googlecode.soundlibs:mp3spi:1.9.5.4")
+    include("com.googlecode.soundlibs:vorbisspi:1.0.3.3")
+    include("com.googlecode.soundlibs:jlayer:1.0.1.4")
+    include("com.googlecode.soundlibs:jorbis:0.0.17.4")
+    include("com.googlecode.soundlibs:tritonus-share:0.3.7.4")
 }
 
 fun toMinecraftCompat(version: String): String {
