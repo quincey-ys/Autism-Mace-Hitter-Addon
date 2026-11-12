@@ -9,12 +9,12 @@ The Fabric mod ID remains `autism-mace-hitter` intentionally so AUTISM Client ca
 The former Mace Hitter module is now named **Mace**.
 
 - **Stun Slam (Axe -> Mace):** attacks a raised shield with an axe, then waits for a valid falling mace smash.
-- **Sword -> Breach Mace Swap:** when a sword is held and an armored player is in ordinary melee range, selects a Breach-enchanted mace for the attack while retaining the sword's pre-swap attributes for the same-tick hit. This depends on server-side attribute-swap behavior.
-- **Mace Attribute Swap:** optionally selects the mace for a falling smash while retaining the source weapon's attributes for the same-tick hit.
-- **Spear Charge -> Mace Double Pop:** this path is active only while the player is actively charging a main-hand spear. It uses the spear's native `ATTACK_RANGE` component to find a target that can actually be reached by the spear. Once a spear hit is confirmed by the target's hurt-time/health update, it immediately selects the mace, attacks once, and restores the spear in the same tick. There is no extra fall-distance gate, hurt-reset wait, or delayed follow-up timer.
+- **Sword -> Breach Mace Swap:** when a sword is held and an armored player is in ordinary melee range, temporarily selects a Breach-enchanted mace and queues the hit through AUTISM's combat input pipeline. The original slot can be restored after the queued hit.
+- **Mace Attribute Swap:** optionally selects the mace for a falling smash, queues the attack through KillAura's hit pipeline, and optionally restores the source slot on the following tick.
+- **Spear Charge -> Mace Double Pop:** this path is armed only while the main-hand spear is actively charging. It uses the spear's native `ATTACK_RANGE` component to find a target that can actually be reached by the spear. After client-observed hit confirmation, it selects the mace and queues one follow-up hit through AUTISM's combat input pipeline; optional slot restoration occurs on the next tick.
 - **Slot restoration:** optionally restores and synchronizes the original hotbar slot after a combo.
 
-The spear double-pop's extended range is gated by the held spear's actual item-defined attack range; it is not active while the player is idle, holding a different item, or merely carrying a spear. The immediate mace follow-up uses a same-tick attribute swap. Servers can still reject or normalize the swap, and the spear hit must be observable by the client before the follow-up can be triggered.
+The spear double-pop's extended range is gated by the held spear's actual item-defined attack range; it is not active while the player is idle, holding a different item, or merely carrying a spear. The follow-up is queued as a real client attack against the current hit ray. Servers can still reject or normalize item swaps, and the spear hit must be observable by the client before the follow-up can be triggered.
 
 ### Mace settings
 
@@ -23,7 +23,7 @@ The spear double-pop's extended range is gated by the held spear's actual item-d
 | Normal Range | 3.2 | Ordinary target range |
 | Attack Delay | 0 ticks | Delay between ordinary attacks |
 | Rotate to Target | On | Faces the current target |
-| Auto Equip Mace | On | Equips a mace only when an attack window is ready; direct attacks while a mace is already held are not blocked by the module's cooldown gate |
+| Auto Equip Mace | On | Selects a mace only when a valid target ray and source-item attack window are ready; the queued mace hit then respects the mace's own attack cooldown |
 | Auto Jump | On | Helps create falling smash windows |
 | Only Attack While Falling | Off | Restricts ordinary attacks to falling |
 | Stun Slam (Axe -> Mace) | On | Axe shield-disable followed by a falling mace hit |
@@ -40,7 +40,7 @@ The spear double-pop's extended range is gated by the held spear's actual item-d
 | FOV | 180° | Maximum target cone; 360° allows targets in every direction |
 | Ignore Teammates | On | Skips allied players |
 
-With **Auto Equip Mace** enabled, the module waits for a ready attack window before changing from another item to the mace. When a mace is already in the main hand, the module submits attacks using the configured tick delay instead of suppressing them behind a client-side 0.9 cooldown check; vanilla/server attack cooldown scaling still determines the damage of each hit. **Only Attack While Falling** is still enforced. Stun Slam keeps the axe selected during setup and switches to the mace only on the actual falling-smash tick.
+Ordinary Mace attacks now follow AUTISM KillAura's combat path: the module arbitrates a silent target rotation, raycasts the target from the camera, validates the held item's native `ATTACK_RANGE`, checks line of sight, and queues an `EntityHitResult` through `AutismCombatClicker`. This replaces direct `gameMode.attack()` calls, which bypassed the client's normal hit-input pipeline. **Only Attack While Falling** is still enforced. Stun Slam keeps the axe selected during setup and switches to the mace only for the queued falling-smash hit.
 
 The **Entities** picker is a whitelist: only selected entity types can be targeted. Its default is `minecraft:player`. The selected entity filter and FOV check are shared by ordinary Mace targeting, Stun Slam acquisition, and the spear-charge target scan. The spear scan still requires the entity to be inside the held spear's native attack-range ray.
 
