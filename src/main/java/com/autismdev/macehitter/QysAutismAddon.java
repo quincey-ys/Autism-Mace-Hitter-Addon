@@ -127,9 +127,15 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
-        if (module.getBool("auto-jump") && player.onGround()) {
+        boolean activelyChargingSpear = module.getBool("spear-double-pop")
+            && player.isUsingItem()
+            && isSpear(player.getMainHandItem())
+            && isSpear(player.getUseItem());
+
+        // Do not inject jump input into an active kinetic spear charge.
+        if (!activelyChargingSpear && module.getBool("auto-jump") && player.onGround()) {
             mc.options.keyJump.setDown(true);
-        } else if (player.onGround()) {
+        } else if (!activelyChargingSpear && player.onGround()) {
             mc.options.keyJump.setDown(false);
         }
 
@@ -137,11 +143,6 @@ public final class QysAutismAddon extends SimpleAddon {
             tickStunSlam(mc, player, module);
             return;
         }
-
-        boolean activelyChargingSpear = module.getBool("spear-double-pop")
-            && player.isUsingItem()
-            && isSpear(player.getMainHandItem())
-            && isSpear(player.getUseItem());
 
         if (activelyChargingSpear) {
             Entity spearTarget = findSpearChargeTarget(mc, player, module);
