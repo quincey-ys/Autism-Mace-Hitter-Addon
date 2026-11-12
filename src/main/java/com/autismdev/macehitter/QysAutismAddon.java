@@ -342,13 +342,15 @@ public final class QysAutismAddon extends SimpleAddon {
     }
 
     private Comparator<LivingEntity> targetComparator(LocalPlayer player, SimpleModule module) {
-        Comparator<LivingEntity> distance = Comparator.comparingDouble(player::distanceToSqr);
+        Comparator<LivingEntity> distance =
+            Comparator.comparingDouble((LivingEntity entity) -> player.distanceToSqr(entity));
         return switch (module.getChoice("targeting")) {
             case "HP" -> Comparator.comparingDouble(LivingEntity::getHealth).thenComparing(distance);
             case "Distance" -> distance;
-            case "FOV" -> Comparator.comparingDouble(entity -> crosshairAngleToEntity(player, entity))
-                .thenComparing(distance);
-            case "Hurt Time" -> Comparator.comparingInt(entity -> entity.hurtTime).thenComparing(distance);
+            case "FOV" -> Comparator.comparingDouble(
+                (LivingEntity entity) -> crosshairAngleToEntity(player, entity)).thenComparing(distance);
+            case "Hurt Time" -> Comparator.comparingInt(
+                (LivingEntity entity) -> entity.hurtTime).thenComparing(distance);
             case "Age" -> Comparator.comparingInt((LivingEntity entity) -> -entity.tickCount)
                 .thenComparing(distance);
             default -> Comparator.comparingInt((LivingEntity entity) -> typeWeight(player, entity))
