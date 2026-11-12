@@ -27,7 +27,7 @@ The spear double-pop's extended range is gated by the held spear's actual item-d
 | Auto Jump | On | Helps create falling smash windows |
 | Only Attack While Falling | Off | Restricts ordinary attacks to falling |
 | Stun Slam (Axe -> Mace) | On | Axe shield-disable followed by a falling mace hit |
-| Mace Attribute Swap | Off | Post-attack mace attribute swap during a smash |
+| Mace Attribute Swap | Off | Same-tick Mace swap for a falling smash using the source weapon's attributes |
 | Sword -> Breach Mace Swap | Off | Situational Breach swap against armored players |
 | Breach Target Armor | 8 | Minimum target armor value |
 | Spear Charge -> Mace Double Pop | Off | Only while charging the main-hand spear; immediate mace hit after confirmed spear contact |
