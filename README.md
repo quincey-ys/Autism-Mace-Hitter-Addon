@@ -42,6 +42,50 @@ The spear double-pop's extended range is gated by the held spear's actual item-d
 
 The **Entities** picker is a whitelist: only selected entity types can be targeted. Its default is `minecraft:player`. The selected entity filter and FOV check are shared by ordinary Mace targeting, Stun Slam acquisition, and the spear-charge target scan. The spear scan still requires the entity to be inside the held spear's native attack-range ray.
 
+
+## Module: Combat
+
+**Combat** is independent from **Mace** and **Hitflick**. It contains four optional combat utilities plus tracked blocking. A shared per-client-tick attack guard coordinates attack actions with Mace so both modules do not deliberately issue two attacks in the same tick.
+
+- **Tracked Blocking:** tracks each nearby entity's blocking state by entity ID and UUID, records when a block begins/ends, and expires stale tracking records.
+- **Shield Breaker:** on a newly observed blocking window, selects an axe, attacks once, and returns to the configured weapon. It has a cooldown and a configurable tracked disable window. This is an attack-based shield disable; actual disable duration depends on server rules and axe cooldown.
+- **Smart Smash:** checks that the player is falling, the configured fall distance is reached, a target is in range and visible, attack cooldown is ready, and a mace is available. It performs at most one smart-smash attack per fall. Against sufficiently armored players it prefers a Breach mace when one is available.
+- **Spear Counter:** detects nearby players actively using a spear while facing and moving toward the local player. It can briefly backstep/strafe and optionally switch to a sword or axe, then restores the prior hotbar slot if the player has not manually changed it. Detection is heuristic and depends on entity movement updates.
+- **Weapon Optimizer:** selects a hotbar weapon based on the target and current situation: axe for a blocking target, mace (preferably Breach against high armor) during a valid smash window, spear when its item-defined range includes the target at longer distance, otherwise sword/axe/mace fallback. Switching is cooldown-limited.
+
+### Combat settings
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| Entities | Players | Registry-backed entity whitelist |
+| Track Blocking | On | Track nearby blocking state |
+| Shield Breaker | Off | Axe attack on a new blocking window |
+| Shield Breaker Cooldown | 500 ms | Prevent repeated shield-break attempts |
+| Shield Disabled Window | 100 ticks | Local tracking window after axe hit; not a guarantee of server shield-disable time |
+| Shield Breaker Reach | 3.2 | Maximum distance for shield reaction |
+| Return Weapon | Previous | Previous, Sword, Mace, Spear, or Best Weapon |
+| Smart Smash | Off | Context-aware falling mace attack |
+| Smart Smash Minimum Fall | 1.5 | Minimum fall distance |
+| Smart Smash Target Range | 3.2 | Maximum target distance |
+| Restore Slot After Smash | Off | Restore the pre-smash hotbar slot |
+| Spear Counter | Off | Detect an aimed, approaching spear user |
+| Spear Counter Range | 8.0 | Threat scan range |
+| Attacker Facing Angle | 55° | Maximum angle between spear user's view and local player |
+| Counter Action | Backstep | Backstep, strafe, switch sword/axe, or combine switch + backstep |
+| Counter Duration | 4 ticks | Duration of movement/switch assist |
+| Counter Cooldown | 600 ms | Minimum time between counters |
+| Weapon Optimizer | Off | Automatically choose a weapon |
+| High Armor Threshold | 12 | Armor value for Breach/axe preference |
+| Spear Selection Distance | 3.2 | Distance beyond which spear selection is considered |
+| Weapon Switch Cooldown | 250 ms | Prevents rapid hotbar switching |
+| Target Scan Range | 8.0 | Nearby target scan radius |
+| Target Priority | FOV | Type, HP, Distance, FOV, Hurt Time, or Age |
+| FOV | 180° | Target cone; 360° permits all directions |
+| Ignore Walls | Off | Skip line-of-sight checks |
+| Ignore Teammates | On | Skip allied players |
+
+Shield and spear threat detection are client-side observations. Server latency, entity update timing, shield-disable mechanics, and anti-cheat can affect whether an action succeeds. Spear Counter is a reactive movement assist, not a guaranteed dodge or a prediction of the server's exact attack timing.
+
 ## Module: Hitflick
 
 **Hitflick** is a separate dropdown module. It sends a brief server-side yaw change immediately before a local attack and restores the original yaw after the attack. It does not change the visible camera rotation.
