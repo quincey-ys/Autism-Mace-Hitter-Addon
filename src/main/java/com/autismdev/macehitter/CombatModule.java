@@ -191,7 +191,8 @@ public final class CombatModule extends SimpleModule {
 
         BlockingTrack state = blockingTracks.get(target.getId());
         if (state == null || !state.uuid.equals(target.getUUID())
-            || !state.blocking || state.attackedThisBlock) {
+            || !state.blocking || state.attackedThisBlock
+            || mc.level.getGameTime() < state.disabledUntilTick) {
             return false;
         }
 
