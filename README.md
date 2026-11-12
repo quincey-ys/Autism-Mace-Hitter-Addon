@@ -1,6 +1,6 @@
 # QYS AUTISM Addon
 
-A client-side addon for AUTISM Client 5.0 on Minecraft 26.2 / Fabric.
+A client-side addon for **AUTISM Client 5.0-26.2 (API v3)** on Minecraft 26.2 / Fabric. The release is version-locked to the Client 5.0 API line; it is not a Client 5.1 / API v4 build.
 
 The Fabric mod ID remains `autism-mace-hitter` intentionally so AUTISM Client can keep the addon identity and saved settings. The displayed addon name is **QYS Addon**.
 
