@@ -12,8 +12,13 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import org.lwjgl.glfw.GLFW;
 
-import java.awt.Robot;
-import java.awt.event.KeyEvent;
+import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SymbolLookup;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 import java.net.URI;
 import java.util.Locale;
 
@@ -25,7 +30,14 @@ import java.util.Locale;
  * before YouTube Music starts playback.
  */
 public final class MusicPlayerModule extends SimpleModule {
-    private Robot mediaRobot;
+    private static final int VK_MEDIA_NEXT_TRACK = 0xB0;
+    private static final int VK_MEDIA_PREVIOUS_TRACK = 0xB1;
+    private static final int VK_MEDIA_PLAY_PAUSE = 0xB3;
+    private static final int VK_VOLUME_UP = 0xAF;
+    private static final int VK_VOLUME_DOWN = 0xAE;
+
+    private MethodHandle mediaKeyHandle;
+    private boolean mediaKeyLookupAttempted;
 
     private boolean openWasDown;
     private boolean playPauseWasDown;
@@ -108,19 +120,19 @@ public final class MusicPlayerModule extends SimpleModule {
             openPlaylist(mc, module);
         }
         if (playPauseDown && !playPauseWasDown) {
-            sendMediaKey(mc, KeyEvent.VK_MEDIA_PLAY_PAUSE);
+            sendMediaKey(mc, VK_MEDIA_PLAY_PAUSE);
         }
         if (nextDown && !nextWasDown) {
-            sendMediaKey(mc, KeyEvent.VK_MEDIA_NEXT_TRACK);
+            sendMediaKey(mc, VK_MEDIA_NEXT_TRACK);
         }
         if (previousDown && !previousWasDown) {
-            sendMediaKey(mc, KeyEvent.VK_MEDIA_PREVIOUS_TRACK);
+            sendMediaKey(mc, VK_MEDIA_PREVIOUS_TRACK);
         }
         if (volumeUpDown && !volumeUpWasDown) {
-            sendMediaKey(mc, KeyEvent.VK_VOLUME_UP);
+            sendMediaKey(mc, VK_VOLUME_UP);
         }
         if (volumeDownDown && !volumeDownWasDown) {
-            sendMediaKey(mc, KeyEvent.VK_VOLUME_DOWN);
+            sendMediaKey(mc, VK_VOLUME_DOWN);
         }
 
         openWasDown = openDown;
@@ -218,15 +230,46 @@ public final class MusicPlayerModule extends SimpleModule {
     }
 
     private void sendMediaKey(Minecraft mc, int keyCode) {
-        try {
-            if (mediaRobot == null) {
-                mediaRobot = new Robot();
-            }
-            mediaRobot.keyPress(keyCode);
-            mediaRobot.keyRelease(keyCode);
-        } catch (Exception exception) {
-            notifyPlayer(mc, "System media controls are unavailable on this device.");
+        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
+            notifyPlayer(mc, "System media-key controls are currently supported on Windows only.");
+            return;
         }
+
+        try {
+            MethodHandle handle = getMediaKeyHandle();
+            if (handle == null) {
+                notifyPlayer(mc, "Windows media-key controls could not be initialized.");
+                return;
+            }
+            handle.invokeExact((byte) keyCode, (byte) 0, 0, MemorySegment.NULL);
+            handle.invokeExact((byte) keyCode, (byte) 0, 2, MemorySegment.NULL);
+        } catch (Throwable exception) {
+            notifyPlayer(mc, "Windows media-key control failed.");
+        }
+    }
+
+    private MethodHandle getMediaKeyHandle() {
+        if (mediaKeyLookupAttempted) return mediaKeyHandle;
+        mediaKeyLookupAttempted = true;
+
+        try {
+            SymbolLookup user32 = SymbolLookup.libraryLookup("user32.dll", Arena.global());
+            MemorySegment keybdEvent = user32.find("keybd_event").orElse(null);
+            if (keybdEvent == null) return null;
+
+            mediaKeyHandle = Linker.nativeLinker().downcallHandle(
+                keybdEvent,
+                FunctionDescriptor.ofVoid(
+                    ValueLayout.JAVA_BYTE,
+                    ValueLayout.JAVA_BYTE,
+                    ValueLayout.JAVA_INT,
+                    ValueLayout.ADDRESS
+                )
+            );
+        } catch (Throwable ignored) {
+            mediaKeyHandle = null;
+        }
+        return mediaKeyHandle;
     }
 
     private void notifyPlayer(Minecraft mc, String message) {
