@@ -7,6 +7,7 @@ import autismclient.util.AutismBindUtil;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Util;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import org.lwjgl.glfw.GLFW;
@@ -25,6 +26,13 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SymbolLookup;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
@@ -43,9 +51,21 @@ import java.util.concurrent.atomic.AtomicLong;
  * and M3U playlists; it does not scrape protected music services.
  */
 public final class MusicPlayerModule extends SimpleModule {
+    private static final int VK_MEDIA_NEXT_TRACK = 0xB0;
+    private static final int VK_MEDIA_PREVIOUS_TRACK = 0xB1;
+    private static final int VK_MEDIA_STOP = 0xB2;
+    private static final int VK_MEDIA_PLAY_PAUSE = 0xB3;
+    private static final int VK_VOLUME_UP = 0xAF;
+    private static final int VK_VOLUME_DOWN = 0xAE;
+
     private enum State {
-        STOPPED, LOADING, PLAYING, PAUSED, ERROR
+        STOPPED, LOADING, PLAYING, PAUSED, EXTERNAL, ERROR
     }
+
+    private MethodHandle mediaKeyHandle;
+    private boolean mediaKeyLookupAttempted;
+    private boolean externalYoutubeMode;
+    private String externalYoutubeSource = "";
 
     private record Track(String source, String title) {
     }
@@ -78,12 +98,12 @@ public final class MusicPlayerModule extends SimpleModule {
         super(
             "music-player",
             "Music Player",
-            "Plays local audio and direct audio streams in-game with M3U playlists, hotkeys, shuffle, looping, and PvP auto-start."
+            "Plays local audio in-game or opens YouTube / YouTube Music in your browser with global media controls and PvP auto-open."
         );
 
         add(new StringSetting("playlist-source", "Playlist Source", "")
             .group("Playlist")
-            .description("Local audio path, direct MP3/OGG/WAV URL, or an M3U playlist file/URL. Relative paths use the Minecraft game folder.")
+            .description("Local audio path, direct MP3/OGG/WAV URL, M3U playlist, or a YouTube / YouTube Music video or playlist URL. YouTube opens in your browser; audio stays in that browser session.")
             .build());
 
         addBool("auto-start-pvp", "Auto Start In PvP", true)
@@ -101,23 +121,53 @@ public final class MusicPlayerModule extends SimpleModule {
             .build());
         add(new KeybindSetting("pause-key", "Play / Pause Key", GLFW.GLFW_KEY_P)
             .group("Keybinds")
-            .description("Pauses or resumes the in-game player.")
+            .description("Pauses or resumes local playback, or sends the Windows media Play/Pause key for YouTube Music.")
             .build());
         add(new KeybindSetting("next-key", "Next Track Key", GLFW.GLFW_KEY_RIGHT_BRACKET)
-            .group("Keybinds").build());
+            .group("Keybinds")
+            .description("Skips the local playlist or sends the Windows Next Track media key.")
+            .build());
         add(new KeybindSetting("previous-key", "Previous Track Key", GLFW.GLFW_KEY_LEFT_BRACKET)
-            .group("Keybinds").build());
+            .group("Keybinds")
+            .description("Goes back locally or sends the Windows Previous Track media key.")
+            .build());
         add(new KeybindSetting("stop-key", "Stop Key", GLFW.GLFW_KEY_BACKSPACE)
             .group("Keybinds").build());
         add(new KeybindSetting("volume-up-key", "Volume Up Key", GLFW.GLFW_KEY_PAGE_UP)
-            .group("Keybinds").build());
+            .group("Keybinds")
+            .description("Raises local player volume or Windows system volume for YouTube Music.")
+            .build());
         add(new KeybindSetting("volume-down-key", "Volume Down Key", GLFW.GLFW_KEY_PAGE_DOWN)
-            .group("Keybinds").build());
+            .group("Keybinds")
+            .description("Lowers local player volume or Windows system volume for YouTube Music.")
+            .build());
         add(new KeybindSetting("shuffle-key", "Toggle Shuffle Key", GLFW.GLFW_KEY_R)
             .group("Keybinds").build());
 
         onTick(this::tickMusicPlayer)
-            .onDisabled(module -> stopPlayback());
+            .onDisabled(this::onDisabled);
+    }
+
+    private void onDisabled(SimpleModule module) {
+        Minecraft mc = Minecraft.getInstance();
+        if (externalYoutubeMode) sendMediaKey(mc, VK_MEDIA_STOP);
+        stopPlayback();
+        externalYoutubeMode = false;
+        externalYoutubeSource = "";
+        resetKeyState();
+    }
+
+    private void resetKeyState() {
+        playWasDown = false;
+        pauseWasDown = false;
+        nextWasDown = false;
+        previousWasDown = false;
+        stopWasDown = false;
+        volumeUpWasDown = false;
+        volumeDownWasDown = false;
+        shuffleWasDown = false;
+        pvpWasActive = false;
+        startedByPvp = false;
     }
 
     private void tickMusicPlayer(SimpleModule module) {
@@ -151,36 +201,52 @@ public final class MusicPlayerModule extends SimpleModule {
         }
         if (pauseDown && !pauseWasDown) {
             startedByPvp = false;
-            togglePause(mc);
+            if (externalYoutubeMode) sendMediaKey(mc, VK_MEDIA_PLAY_PAUSE);
+            else togglePause(mc);
         }
         if (nextDown && !nextWasDown) {
             startedByPvp = false;
-            nextTrack(mc, module);
+            if (externalYoutubeMode) sendMediaKey(mc, VK_MEDIA_NEXT_TRACK);
+            else nextTrack(mc, module);
         }
         if (previousDown && !previousWasDown) {
             startedByPvp = false;
-            previousTrack(mc, module);
+            if (externalYoutubeMode) sendMediaKey(mc, VK_MEDIA_PREVIOUS_TRACK);
+            else previousTrack(mc, module);
         }
         if (stopDown && !stopWasDown) {
             startedByPvp = false;
-            stopPlayback();
-            notifyPlayer(mc, "Playback stopped.");
+            if (externalYoutubeMode) sendMediaKey(mc, VK_MEDIA_STOP);
+            else stopPlayback();
+            notifyPlayer(mc, "Playback stop requested.");
         }
         if (volumeUpDown && !volumeUpWasDown) {
-            module.setValue("volume", Integer.toString(Math.min(100, module.getInt("volume") + 5)));
-            volume = module.getInt("volume");
-            applyVolume();
-            notifyVolume(mc);
+            if (externalYoutubeMode) {
+                sendMediaKey(mc, VK_VOLUME_UP);
+            } else {
+                module.setValue("volume", Integer.toString(Math.min(100, module.getInt("volume") + 5)));
+                volume = module.getInt("volume");
+                applyVolume();
+                notifyVolume(mc);
+            }
         }
         if (volumeDownDown && !volumeDownWasDown) {
-            module.setValue("volume", Integer.toString(Math.max(0, module.getInt("volume") - 5)));
-            volume = module.getInt("volume");
-            applyVolume();
-            notifyVolume(mc);
+            if (externalYoutubeMode) {
+                sendMediaKey(mc, VK_VOLUME_DOWN);
+            } else {
+                module.setValue("volume", Integer.toString(Math.max(0, module.getInt("volume") - 5)));
+                volume = module.getInt("volume");
+                applyVolume();
+                notifyVolume(mc);
+            }
         }
         if (shuffleDown && !shuffleWasDown) {
-            module.setValue("shuffle", Boolean.toString(!module.getBool("shuffle")));
-            notifyPlayer(mc, "Shuffle " + (module.getBool("shuffle") ? "enabled." : "disabled."));
+            if (externalYoutubeMode) {
+                notifyPlayer(mc, "Use YouTube Music's Shuffle control in the browser. The system media keys cannot toggle it reliably.");
+            } else {
+                module.setValue("shuffle", Boolean.toString(!module.getBool("shuffle")));
+                notifyPlayer(mc, "Shuffle " + (module.getBool("shuffle") ? "enabled." : "disabled."));
+            }
         }
 
         playWasDown = playDown;
@@ -194,14 +260,18 @@ public final class MusicPlayerModule extends SimpleModule {
 
         boolean pvpActive = hasNearbyEnemyPlayer(mc, player, module);
         if (module.getBool("auto-start-pvp") && pvpActive && !pvpWasActive
-            && state != State.PLAYING && state != State.LOADING) {
+            && state != State.PLAYING && state != State.LOADING && state != State.EXTERNAL) {
             startedByPvp = true;
             loadAndPlay(mc, module);
         } else if (!pvpActive && pvpWasActive
             && module.getBool("pause-when-pvp-ends") && startedByPvp) {
-            pausePlayback();
+            if (externalYoutubeMode) {
+                notifyPlayer(mc, "PvP ended. Press the Play / Pause key to control YouTube Music; external playback state cannot be queried.");
+            } else {
+                pausePlayback();
+                notifyPlayer(mc, "Paused because PvP ended.");
+            }
             startedByPvp = false;
-            notifyPlayer(mc, "Paused because PvP ended.");
         }
         pvpWasActive = pvpActive;
 
@@ -246,9 +316,18 @@ public final class MusicPlayerModule extends SimpleModule {
     private void loadAndPlay(Minecraft mc, SimpleModule module) {
         String source = module.getText("playlist-source");
         if (source == null || source.isBlank()) {
-            notifyPlayer(mc, "Set Playlist Source first: use a local audio file, direct audio URL, or .m3u playlist.");
+            notifyPlayer(mc, "Set Playlist Source first: use a local audio file, direct audio URL, .m3u playlist, or YouTube Music URL.");
             return;
         }
+
+        URI youtubeUri = parseYoutubeUri(source);
+        if (youtubeUri != null) {
+            openYoutubeSource(mc, youtubeUri);
+            return;
+        }
+
+        externalYoutubeMode = false;
+        externalYoutubeSource = "";
 
         try {
             List<Track> loaded = parsePlaylist(source);
@@ -263,6 +342,72 @@ public final class MusicPlayerModule extends SimpleModule {
             notifyPlayer(mc, "Loaded " + playlist.size() + " track(s).");
         } catch (IOException exception) {
             notifyPlayer(mc, "Could not load playlist: " + safeMessage(exception));
+        }
+    }
+
+    private void openYoutubeSource(Minecraft mc, URI youtubeUri) {
+        String normalized = youtubeUri.toString();
+        if (externalYoutubeMode && normalized.equals(externalYoutubeSource)) {
+            notifyPlayer(mc, "YouTube Music playlist is already open. Use P, ], or [ for media controls.");
+            return;
+        }
+
+        stopPlayback();
+        try {
+            Util.getPlatform().openUri(youtubeUri);
+            externalYoutubeMode = true;
+            externalYoutubeSource = normalized;
+            playlist = List.of();
+            currentIndex = -1;
+            state = State.EXTERNAL;
+            notifyPlayer(mc, "Opened YouTube Music in your browser. Click Play once if the browser blocks autoplay; then use P, ], and [ for media controls.");
+        } catch (RuntimeException exception) {
+            externalYoutubeMode = false;
+            externalYoutubeSource = "";
+            state = State.ERROR;
+            notifyPlayer(mc, "Could not open YouTube Music. Check your default browser.");
+        }
+    }
+
+    private URI parseYoutubeUri(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) return null;
+
+        try {
+            URI uri = URI.create(rawUrl.trim());
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (scheme == null || host == null
+                || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
+                || uri.getUserInfo() != null) {
+                return null;
+            }
+
+            String normalizedHost = host.toLowerCase(Locale.ROOT);
+            boolean youtubeHost = normalizedHost.equals("youtube.com")
+                || normalizedHost.equals("www.youtube.com")
+                || normalizedHost.equals("m.youtube.com")
+                || normalizedHost.equals("music.youtube.com");
+            boolean shortHost = normalizedHost.equals("youtu.be");
+            if (!youtubeHost && !shortHost) return null;
+
+            String path = uri.getPath() == null ? "" : uri.getPath().toLowerCase(Locale.ROOT);
+            String query = uri.getRawQuery() == null ? "" : uri.getRawQuery().toLowerCase(Locale.ROOT);
+            boolean hasPlaylistId = false;
+            boolean hasVideoId = shortHost && path.length() > 1;
+            for (String parameter : query.split("&")) {
+                if (parameter.startsWith("list=") && parameter.length() > 5) {
+                    hasPlaylistId = true;
+                } else if (parameter.startsWith("v=") && parameter.length() > 2) {
+                    hasVideoId = true;
+                }
+            }
+
+            boolean playlistPath = path.equals("/playlist");
+            boolean videoPath = path.equals("/watch") || path.startsWith("/shorts/");
+            return (playlistPath && hasPlaylistId) || (videoPath && hasVideoId) || (shortHost && hasVideoId)
+                ? uri : null;
+        } catch (IllegalArgumentException exception) {
+            return null;
         }
     }
 
@@ -652,6 +797,49 @@ public final class MusicPlayerModule extends SimpleModule {
         playbackThread = null;
         if (thread != null) thread.interrupt();
         state = State.STOPPED;
+    }
+
+    private void sendMediaKey(Minecraft mc, int keyCode) {
+        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
+            notifyPlayer(mc, "YouTube Music media-key control is currently supported on Windows only.");
+            return;
+        }
+
+        try {
+            MethodHandle handle = getMediaKeyHandle();
+            if (handle == null) {
+                notifyPlayer(mc, "Windows media-key controls could not be initialized.");
+                return;
+            }
+            handle.invokeExact((byte) keyCode, (byte) 0, 0, MemorySegment.NULL);
+            handle.invokeExact((byte) keyCode, (byte) 0, 2, MemorySegment.NULL);
+        } catch (Throwable exception) {
+            notifyPlayer(mc, "Windows media-key control failed: " + exception.getClass().getSimpleName());
+        }
+    }
+
+    private MethodHandle getMediaKeyHandle() {
+        if (mediaKeyLookupAttempted) return mediaKeyHandle;
+        mediaKeyLookupAttempted = true;
+
+        try {
+            SymbolLookup user32 = SymbolLookup.libraryLookup("user32.dll", Arena.global());
+            MemorySegment keybdEvent = user32.find("keybd_event").orElse(null);
+            if (keybdEvent == null) return null;
+
+            mediaKeyHandle = Linker.nativeLinker().downcallHandle(
+                keybdEvent,
+                FunctionDescriptor.ofVoid(
+                    ValueLayout.JAVA_BYTE,
+                    ValueLayout.JAVA_BYTE,
+                    ValueLayout.JAVA_INT,
+                    ValueLayout.ADDRESS
+                )
+            );
+        } catch (Throwable ignored) {
+            mediaKeyHandle = null;
+        }
+        return mediaKeyHandle;
     }
 
     private void notifyVolume(Minecraft mc) {
