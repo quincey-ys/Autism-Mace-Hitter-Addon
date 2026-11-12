@@ -42,6 +42,11 @@ public final class QysAutismAddon extends SimpleAddon {
     private float spearLastHealth;
     private float spearLastAbsorption;
 
+    // Delayed slot restoration keeps the post-attack swap visible to the server
+    // for a full client tick instead of immediately undoing the swap packet.
+    private int pendingRestoreSlot = -1;
+    private int pendingRestoreTicks;
+
     private Entity spearFollowupTarget;
     private int spearFollowupMaceSlot = -1;
     private int spearFollowupReturnSlot = -1;
@@ -131,6 +136,11 @@ public final class QysAutismAddon extends SimpleAddon {
             stunTicks = 0;
             currentTarget = null;
             return;
+        }
+
+        if (pendingRestoreTicks > 0 && --pendingRestoreTicks == 0) {
+            restoreSlot(mc, player, pendingRestoreSlot);
+            pendingRestoreSlot = -1;
         }
 
         if (module.getBool("auto-jump") && player.onGround()) {
@@ -443,10 +453,14 @@ public final class QysAutismAddon extends SimpleAddon {
         Minecraft mc, LocalPlayer player, Entity target,
         int swapSlot, int originalSlot, boolean restore
     ) {
-        selectSlot(player, swapSlot);
+        // Attribute/Breach swapping is a post-hit sequence: attack with the
+        // source weapon first, then switch to the mace immediately afterward.
         mc.gameMode.attack(player, target);
+        selectSlot(player, swapSlot);
+        syncSelectedSlot(mc);
         if (restore) {
-            restoreSlot(mc, player, originalSlot);
+            pendingRestoreSlot = originalSlot;
+            pendingRestoreTicks = 1;
         }
     }
 
