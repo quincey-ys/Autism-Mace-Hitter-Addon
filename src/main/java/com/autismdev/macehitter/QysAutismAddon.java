@@ -4,6 +4,12 @@ import autismclient.api.ApiVersion;
 import autismclient.api.SimpleAddon;
 import autismclient.api.module.RegistryListSetting;
 import autismclient.api.module.SimpleModule;
+import autismclient.util.AutismCombatClicker;
+import autismclient.util.AutismHandArbiter;
+import autismclient.util.AutismInventoryHelper;
+import autismclient.util.AutismKillAuraRotation;
+import autismclient.util.AutismRotationUtil;
+import autismclient.util.AutismSilentAim;
 import com.autismdev.macehitter.mixin.MultiPlayerGameModeInvoker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -17,12 +23,16 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.NeutralMob;
 import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.MaceItem;
 import net.minecraft.world.item.component.AttackRange;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -41,6 +51,11 @@ public final class QysAutismAddon extends SimpleAddon {
 
     private int delayCounter;
     private Entity currentTarget;
+    private MaceModule maceModule;
+    private int lastQueuedMaceAttackTick = Integer.MIN_VALUE;
+    private int pendingRestoreSlot = -1;
+    private int pendingRestoreFromSlot = -1;
+    private int pendingRestoreTick = Integer.MIN_VALUE;
     private static int lastClaimedAttackTick = Integer.MIN_VALUE;
 
     /** Prevents independent addon modules from issuing multiple attacks in one client tick. */
@@ -72,6 +87,7 @@ public final class QysAutismAddon extends SimpleAddon {
     @Override
     protected void initialize() {
         MaceModule mace = new MaceModule();
+        maceModule = mace;
         mace
             .addDouble("range", "Normal Range", 3.2, 1.0, 6.0, 0.1)
             .addInt("delay", "Attack Delay (ticks)", 0, 0, 20, 1)
@@ -93,7 +109,6 @@ public final class QysAutismAddon extends SimpleAddon {
                 "Type", "HP", "Distance", "FOV", "Hurt Time", "Age")
             .addInt("fov", "FOV", 180, 10, 360, 10)
             .addBool("teams-check", "Ignore Teammates", true)
-            .onTick(this::onMaceTick)
             .onDisabled(this::onMaceDisabled);
 
         registerModule(mace);
@@ -129,20 +144,56 @@ public final class QysAutismAddon extends SimpleAddon {
      * Uses the same registry-backed entity picker as AUTISM KillAura.
      * Keeping the list on this module lets users whitelist exact mob types.
      */
-    private final class MaceModule extends SimpleModule {
+    private final class MaceModule extends SimpleModule implements AutismSilentAim.Owner {
         private String cachedEntityListSource = "";
         private Set<String> cachedEntityIds = Set.of();
+        private boolean rotationActive;
 
         MaceModule() {
             super(
                 "mace-hitter",
                 "Mace",
-                "Situational mace combat: Stun Slam, Breach swap, native spear-charge follow-up, and mace smash swap."
+                "Situational mace combat using AUTISM KillAura's silent rotation and queued hit pipeline."
             );
             add(RegistryListSetting.entityTypes("entities", "Entities", "minecraft:player")
                 .group("Target")
                 .description("Entity types that Mace may target. Uses the same registry picker as KillAura.")
                 .build());
+        }
+
+        @Override
+        public void preMovementTick() {
+            onMaceTick(this);
+        }
+
+        @Override
+        public void tick() {
+            if (!isEnabled() && id().equals(AutismKillAuraRotation.currentOwner())
+                && MC.player != null) {
+                AutismKillAuraRotation.update(id(), MC.player);
+                rotationActive = id().equals(AutismKillAuraRotation.currentOwner())
+                    && AutismKillAuraRotation.hasCurrentRotation();
+            }
+        }
+
+        @Override
+        public boolean ticksWhenDisabled() {
+            return true;
+        }
+
+        @Override
+        public boolean hasDisabledTickWork() {
+            return id().equals(AutismKillAuraRotation.currentOwner())
+                && AutismKillAuraRotation.hasCurrentRotation();
+        }
+
+        @Override
+        public boolean silentCorrectionApplies() {
+            return rotationActive && (isEnabled() || AutismKillAuraRotation.isWindingDown());
+        }
+
+        void setRotationActive(boolean active) {
+            rotationActive = active;
         }
 
         Set<String> entityIds() {
