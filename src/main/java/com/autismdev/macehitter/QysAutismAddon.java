@@ -291,12 +291,16 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
-        // Do not equip a mace just because a target exists. Wait until this
-        // tick can actually issue the configured attack (including the falling
-        // restriction and vanilla attack cooldown), then claim the tick before
-        // changing the selected slot.
+        // A mace already in hand must not be blocked by the client-side
+        // cooldown gate: keep submitting attacks at the configured tick delay
+        // and let vanilla/server cooldown scaling determine their damage.
+        // When auto-equipping from another item, still wait for that source
+        // item's attack window so the hotbar does not switch early.
+        boolean maceAlreadyHeld = player.getMainHandItem().getItem() instanceof MaceItem;
+        boolean attackCooldownReady = maceAlreadyHeld
+            || player.getAttackStrengthScale(0.5F) >= 0.9F;
         boolean attackWindowReady = (!module.getBool("falling-only") || isFalling(player))
-            && player.getAttackStrengthScale(0.5F) >= 0.9F;
+            && attackCooldownReady;
         if (!attackWindowReady) return;
 
         int availableMaceSlot = findMaceSlot(player);
@@ -318,6 +322,8 @@ public final class QysAutismAddon extends SimpleAddon {
             return;
         }
 
+        // Ensure a newly equipped mace is selected server-side before the attack.
+        if (maceReady) syncSelectedSlot(mc);
         mc.gameMode.attack(player, target);
         delayCounter = module.getInt("delay");
     }
