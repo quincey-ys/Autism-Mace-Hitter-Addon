@@ -41,6 +41,14 @@ public final class QysAutismAddon extends SimpleAddon {
 
     private int delayCounter;
     private Entity currentTarget;
+    private static int lastClaimedAttackTick = Integer.MIN_VALUE;
+
+    /** Prevents independent addon modules from issuing multiple attacks in one client tick. */
+    public static boolean claimAttackTick(int tick) {
+        if (lastClaimedAttackTick == tick) return false;
+        lastClaimedAttackTick = tick;
+        return true;
+    }
 
     // Stun Slam is staged: axe shield-disable, then a real falling mace smash.
     private Entity stunTarget;
@@ -89,6 +97,7 @@ public final class QysAutismAddon extends SimpleAddon {
             .onDisabled(this::onMaceDisabled);
 
         registerModule(mace);
+        registerModule(new CombatModule());
 
         SimpleModule hitflick = new SimpleModule(
             "hitflick",
