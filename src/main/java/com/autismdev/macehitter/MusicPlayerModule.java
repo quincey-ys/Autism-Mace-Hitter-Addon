@@ -46,9 +46,9 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * In-game music player. Audio is decoded client-side and mixed by Java Sound
- * while Minecraft is running. Supports local audio files, direct audio URLs,
- * and M3U playlists; it does not scrape protected music services.
+ * Music player with local in-game audio decoding and a browser handoff for
+ * YouTube / YouTube Music URLs. Browser playback is controlled through the
+ * active Windows media session; protected audio is never extracted.
  */
 public final class MusicPlayerModule extends SimpleModule {
     private static final int VK_MEDIA_NEXT_TRACK = 0xB0;
@@ -117,7 +117,7 @@ public final class MusicPlayerModule extends SimpleModule {
 
         add(new KeybindSetting("play-key", "Play Playlist Key", GLFW.GLFW_KEY_M)
             .group("Keybinds")
-            .description("Loads the configured playlist and starts playback.")
+            .description("Loads local audio or opens a configured YouTube / YouTube Music URL in your browser.")
             .build());
         add(new KeybindSetting("pause-key", "Play / Pause Key", GLFW.GLFW_KEY_P)
             .group("Keybinds")
@@ -132,7 +132,9 @@ public final class MusicPlayerModule extends SimpleModule {
             .description("Goes back locally or sends the Windows Previous Track media key.")
             .build());
         add(new KeybindSetting("stop-key", "Stop Key", GLFW.GLFW_KEY_BACKSPACE)
-            .group("Keybinds").build());
+            .group("Keybinds")
+            .description("Stops local playback or sends the Windows media Stop key.")
+            .build());
         add(new KeybindSetting("volume-up-key", "Volume Up Key", GLFW.GLFW_KEY_PAGE_UP)
             .group("Keybinds")
             .description("Raises local player volume or Windows system volume for YouTube Music.")
