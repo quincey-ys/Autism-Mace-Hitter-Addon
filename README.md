@@ -45,6 +45,30 @@ With **Auto Equip Mace** enabled, the module waits until a valid attack window i
 The **Entities** picker is a whitelist: only selected entity types can be targeted. Its default is `minecraft:player`. The selected entity filter and FOV check are shared by ordinary Mace targeting, Stun Slam acquisition, and the spear-charge target scan. The spear scan still requires the entity to be inside the held spear's native attack-range ray.
 
 
+
+## Module: Music Player
+
+**Music Player** is a standalone module and is independent of Combat, Mace, and Hitflick. Configure any YouTube Music playlist URL in its settings, then use its keybinds or let it open the playlist when a nearby enemy player enters the configured PvP detection range.
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| YouTube Music Playlist URL | Empty | Any YouTube Music playlist link containing a playlist ID |
+| Auto Open In PvP | On | Opens the configured playlist once when an enemy player enters the detection range |
+| PvP Detection Range | 12 blocks | Nearby-player radius used for automatic launch |
+| Require Line Of Sight | On | Requires a visible player for PvP auto-detection |
+| Ignore Teammates | On | Does not trigger for allied players |
+| Enable Media Controls | On | Enables system-wide media and volume key actions |
+| Open Playlist Key | M | Opens the configured playlist manually |
+| Play / Pause Key | P | Sends the OS Play/Pause media key |
+| Next Track Key | ] | Sends the OS Next Track media key |
+| Previous Track Key | [ | Sends the OS Previous Track media key |
+| Volume Up Key | = | Raises system volume |
+| Volume Down Key | - | Lowers system volume |
+
+The playlist URL is configurable, so no specific song or playlist is hardcoded. Automatic launch is edge-triggered: it opens once when PvP is first detected, not every tick while a player remains nearby. The detection is proximity-based, so adjust the range or disable **Auto Open In PvP** when you do not want nearby players alone to launch music.
+
+Media controls are sent to the operating system's active media session. They can control YouTube Music when its browser session owns the media session, but may affect another active media app instead. Opening a playlist cannot guarantee autoplay; browser settings, sign-in state, and autoplay restrictions may still require a click in the browser.
+
 ## Module: Combat
 
 **Combat** is independent from **Mace** and **Hitflick**. It contains four optional combat utilities plus tracked blocking. A shared per-client-tick attack guard coordinates attack actions with Mace so both modules do not deliberately issue two attacks in the same tick.
