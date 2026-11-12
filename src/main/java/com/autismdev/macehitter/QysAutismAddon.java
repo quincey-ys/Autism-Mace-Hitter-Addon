@@ -2,6 +2,7 @@ package com.autismdev.macehitter;
 
 import autismclient.api.ApiVersion;
 import autismclient.api.SimpleAddon;
+import autismclient.api.module.RegistryListSetting;
 import autismclient.api.module.SimpleModule;
 import com.autismdev.macehitter.mixin.MultiPlayerGameModeInvoker;
 import net.minecraft.client.Minecraft;
@@ -10,7 +11,11 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityReference;
+import net.minecraft.world.entity.EntitySelector;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.NeutralMob;
+import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.ItemStack;
@@ -21,6 +26,13 @@ import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /** QYS Addon: situational mace combat plus a separate silent Hitflick module. */
 public final class QysAutismAddon extends SimpleAddon {
@@ -51,11 +63,8 @@ public final class QysAutismAddon extends SimpleAddon {
 
     @Override
     protected void initialize() {
-        SimpleModule mace = new SimpleModule(
-            "mace-hitter",
-            "Mace",
-            "Situational mace combat: Stun Slam, Breach swap, native spear-charge follow-up, and mace smash swap."
-        )
+        MaceModule mace = new MaceModule();
+        mace
             .addDouble("range", "Normal Range", 3.2, 1.0, 6.0, 0.1)
             .addInt("delay", "Attack Delay (ticks)", 0, 0, 20, 1)
             .addBool("rotate", "Rotate to Target", true)
@@ -72,7 +81,9 @@ public final class QysAutismAddon extends SimpleAddon {
             .addBool("restore-slot", "Restore Original Slot After Combo", true)
             .addBool("require-mace", "Require Mace Available", false)
             .addBool("ignore-walls", "Ignore Walls", false)
-            .addChoice("target-mode", "Target Mode", "Players", "Players", "Everything")
+            .addChoice("targeting", "Targeting", "FOV",
+                "Type", "HP", "Distance", "FOV", "Hurt Time", "Age")
+            .addInt("fov", "FOV", 180, 10, 360, 10)
             .addBool("teams-check", "Ignore Teammates", true)
             .onTick(this::onMaceTick)
             .onDisabled(this::onMaceDisabled);
@@ -102,6 +113,48 @@ public final class QysAutismAddon extends SimpleAddon {
             "mace",
             this::manualSlam
         );
+    }
+
+    /**
+     * Uses the same registry-backed entity picker as AUTISM KillAura.
+     * Keeping the list on this module lets users whitelist exact mob types.
+     */
+    private final class MaceModule extends SimpleModule {
+        private String cachedEntityListSource = "";
+        private Set<String> cachedEntityIds = Set.of();
+
+        MaceModule() {
+            super(
+                "mace-hitter",
+                "Mace",
+                "Situational mace combat: Stun Slam, Breach swap, native spear-charge follow-up, and mace smash swap."
+            );
+            add(RegistryListSetting.entityTypes("entities", "Entities", "minecraft:player")
+                .group("Target")
+                .description("Entity types that Mace may target. Uses the same registry picker as KillAura.")
+                .build());
+        }
+
+        Set<String> entityIds() {
+            List<String> selected = list("entities");
+            String source = String.join("|", selected);
+            if (source.equals(cachedEntityListSource)) return cachedEntityIds;
+
+            Set<String> normalized = new LinkedHashSet<>();
+            for (String entry : selected) {
+                if (entry == null) continue;
+                String value = entry.trim().toLowerCase(Locale.ROOT);
+                if (value.isEmpty()) continue;
+                normalized.add(value);
+                int separator = value.indexOf(':');
+                if (separator >= 0 && separator + 1 < value.length()) {
+                    normalized.add(value.substring(separator + 1));
+                }
+            }
+            cachedEntityListSource = source;
+            cachedEntityIds = Set.copyOf(normalized);
+            return cachedEntityIds;
+        }
     }
 
     private void onMaceDisabled(SimpleModule module) {
@@ -259,13 +312,58 @@ public final class QysAutismAddon extends SimpleAddon {
     }
 
     private boolean isValidTarget(LocalPlayer player, Entity entity, SimpleModule module) {
-        if (entity == player || entity.isSpectator()) return false;
+        if (entity == player || entity.isSpectator() || entity.isRemoved()) return false;
         if (!(entity instanceof LivingEntity living) || !living.isAlive()) return false;
-        if (module.getChoice("target-mode").equalsIgnoreCase("Players")
-            && !(entity instanceof Player)) return false;
-        if (entity instanceof Player other && module.getBool("teams-check")
-            && player.isAlliedTo(other)) return false;
+        if (!EntitySelector.CAN_BE_PICKED.test(entity) || entity.hasPassenger(player)) return false;
+        if (!matchesEntity(module, entity)) return false;
+
+        if (entity instanceof Player other) {
+            if (other.isSleeping()) return false;
+            if (module.getBool("teams-check") && player.isAlliedTo(other)) return false;
+        }
+
+        if (crosshairAngleToEntity(player, entity) > module.getInt("fov") * 0.5D) return false;
         return module.getBool("ignore-walls") || player.hasLineOfSight(entity);
+    }
+
+    private boolean matchesEntity(SimpleModule module, Entity entity) {
+        Set<String> ids = module instanceof MaceModule mace ? mace.entityIds() : Set.of("minecraft:player");
+        String id = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().toLowerCase(Locale.ROOT);
+        int separator = id.indexOf(':');
+        return ids.contains(id) || separator >= 0 && ids.contains(id.substring(separator + 1));
+    }
+
+    private double crosshairAngleToEntity(LocalPlayer player, Entity entity) {
+        Vec3 toTarget = entity.getBoundingBox().getCenter().subtract(player.getEyePosition());
+        if (toTarget.lengthSqr() <= 1.0E-12D) return 0.0D;
+        double dot = player.getLookAngle().normalize().dot(toTarget.normalize());
+        dot = Math.max(-1.0D, Math.min(1.0D, dot));
+        return Math.toDegrees(Math.acos(dot));
+    }
+
+    private Comparator<LivingEntity> targetComparator(LocalPlayer player, SimpleModule module) {
+        Comparator<LivingEntity> distance = Comparator.comparingDouble(player::distanceToSqr);
+        return switch (module.getChoice("targeting")) {
+            case "HP" -> Comparator.comparingDouble(LivingEntity::getHealth).thenComparing(distance);
+            case "Distance" -> distance;
+            case "FOV" -> Comparator.comparingDouble(entity -> crosshairAngleToEntity(player, entity))
+                .thenComparing(distance);
+            case "Hurt Time" -> Comparator.comparingInt(entity -> entity.hurtTime).thenComparing(distance);
+            case "Age" -> Comparator.comparingInt((LivingEntity entity) -> -entity.tickCount)
+                .thenComparing(distance);
+            default -> Comparator.comparingInt((LivingEntity entity) -> typeWeight(player, entity))
+                .thenComparing(distance);
+        };
+    }
+
+    private int typeWeight(LocalPlayer player, LivingEntity entity) {
+        if (entity instanceof Player) return 0;
+        if (entity instanceof Enemy) return 1;
+        if (entity instanceof NeutralMob neutral) {
+            EntityReference<LivingEntity> angerTarget = neutral.getPersistentAngerTarget();
+            if (angerTarget != null && angerTarget.matches(player)) return 2;
+        }
+        return Integer.MAX_VALUE;
     }
 
     /**
@@ -374,26 +472,19 @@ public final class QysAutismAddon extends SimpleAddon {
     private Entity findTarget(Minecraft mc, SimpleModule module) {
         LocalPlayer player = mc.player;
         double range = module.getDouble("range");
-        boolean ignoreWalls = module.getBool("ignore-walls");
+        List<LivingEntity> candidates = new ArrayList<>();
 
-        Entity best = null;
-        double bestDistance = Double.MAX_VALUE;
         for (Entity entity : mc.level.entitiesForRendering()) {
-            if (!isValidTarget(player, entity, module)) {
+            if (!(entity instanceof LivingEntity living) || !isValidTarget(player, entity, module)) {
                 continue;
             }
-
-            double distance = player.distanceTo(entity);
-            if (distance > range || distance >= bestDistance) {
-                continue;
+            if (player.distanceTo(entity) <= range) {
+                candidates.add(living);
             }
-            if (!ignoreWalls && !player.hasLineOfSight(entity)) {
-                continue;
-            }
-            best = entity;
-            bestDistance = distance;
         }
-        return best;
+
+        candidates.sort(targetComparator(player, module));
+        return candidates.isEmpty() ? null : candidates.get(0);
     }
 
     private void performAttributeSwap(
